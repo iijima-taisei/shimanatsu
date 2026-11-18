@@ -46,7 +46,7 @@ export const SCHED = {
 };
 const FINAL = { nagisa:{ k:'fin', x:80, z:30.5, ry:PI/2, pose:'idle' }, kouta:{ k:'fin', x:83, z:35.5, ry:PI/2, pose:'idle' }, kotoha:{ k:'fin', x:78.5, z:38.5, ry:PI/2, pose:'idle' } };
 export class NPC {
-  constructor(id, scene, opt){ this.id = id; this.ch = new Character(opt); this.root = this.ch.root; this.pos = this.root.position; scene.add(this.root); this.spot = null; this.following = false; this.override = null; this.yaw = 0; }
+  constructor(id, scene, opt){ this.id = id; this.ch = new Character(opt); this.root = this.ch.root; this.pos = this.root.position; scene.add(this.root); this.spot = null; this.following = false; this.override = null; this.chatPeer = null; this.yaw = 0; }
   setHold(kind){ if (kind === this.holdKind) return; this.holdKind = kind; for (const m of this.held || []) m.parent && m.parent.remove(m); this.held = [];
     if (!kind) return; const [right, left] = HELD[kind](); const n = this.ch.n;
     for (const [list, node] of [[right, n.foreR], [left, n.foreL]]) for (const m of list){ if (!node) continue; if (m.position.y === 0) m.position.set(0, -0.36, 0.06); node.add(m); this.held.push(m); } }
@@ -63,8 +63,8 @@ export class NPC {
   step(ux, uz, len, G){ for (const off of [0, 0.6, -0.6, 1.2, -1.2]){ const c = Math.cos(off), s = Math.sin(off), vx = ux*c + uz*s, vz = -ux*s + uz*c, x = this.pos.x + vx*len, z = this.pos.z + vz*len;
       if (!this.blocked(x, z, G) || this.blocked(this.pos.x, this.pos.z, G)){ this.pos.x = x; this.pos.z = z; this.pos.y = G.groundAt ? G.groundAt(x, z, this.pos.y + 0.5) : heightAt(x, z); return true; } }
     return false; }
-  // ひまにしているか（LLMが行動を決めてよいとき。決まった予定・行事・連れ歩き・作業中は決めない）
-  isFree(G){ const s = this.spot; return !!s && !s.room && !s.hide && s.seat === undefined && s.pose === 'idle' && s.k !== 'bon' && !this.pose && !this.override && !this.following && !this.trip && !this.ride && !this.knock && !(this.recover > 0) && !this.back && !G.indoor; }
+  // ひまにしているか（LLMが行動を決めてよいとき。決まった予定・行事・連れ歩き・作業・掛け合い中は決めない）
+  isFree(G){ const s = this.spot; return !!s && !s.room && !s.hide && s.seat === undefined && s.pose === 'idle' && s.k !== 'bon' && !this.pose && !this.override && !this.following && !this.trip && !this.ride && !this.knock && !(this.recover > 0) && !this.back && !this.chatPeer && !G.indoor; }
   // LLMが選んだ行動：1 のんびり、2 歩きまわる、3 主人公のそばへ、4 遠くをながめる
   aiAct(k, G){ if (!this.isFree(G)) return; const s = this.spot, P = G.player;
     if (k === 2){ const a = Math.random()*Math.PI*2, r = 2 + Math.random()*4, x = s.x + Math.sin(a)*r, z = s.z + Math.cos(a)*r; if (!this.blocked(x, z, G)) this.wander = { x, z }; }
@@ -101,7 +101,7 @@ export class NPC {
       // ひまなとき（外で立っている）：まわりを少し歩いて、立ち止まって、あたりを見る
       { const sp0 = this.spot, free = sp0 && !sp0.room && !sp0.hide && sp0.seat === undefined && sp0.pose === 'idle' && sp0.k !== 'bon' && !this.pose && !this.override && !G.indoor;
         const talking = G.lock && Math.hypot(P.pos.x - this.pos.x, P.pos.z - this.pos.z) < 6;
-        if (free && !talking){ this.wanderT = (this.wanderT ?? Math.random()*6) - dt;
+        if (free && !talking && !this.chatPeer){ this.wanderT = (this.wanderT ?? Math.random()*6) - dt;
           if (!this.wander && this.wanderT <= 0){ const a = Math.random()*Math.PI*2, r = 0.8 + Math.random()*2.8, x = sp0.x + Math.sin(a)*r, z = sp0.z + Math.cos(a)*r;
             if (!this.blocked(x, z, G)) this.wander = { x, z }; this.wanderT = 5 + Math.random()*9; this.lookYaw = null; }
           if (this.wander){ const dx = this.wander.x - this.pos.x, dz = this.wander.z - this.pos.z, d = Math.hypot(dx, dz);
@@ -113,6 +113,8 @@ export class NPC {
       const s = this.spot; pose = s.pose; this.root.visible = s.room ? (rid(s) === 'class' ? G.world.classroom.visible && G.indoor !== 'home' && G.indoor !== 'shop' && G.indoor !== 'term' : G.indoor === rid(s)) : !s.hide;   // 教室は3階。ほかの階にいるときは（上の階を消しているので）見せない
       let yaw = (this.lookYaw != null && pose === 'idle') ? this.lookYaw : s.ry; const dx = P.pos.x - this.pos.x, dz = P.pos.z - this.pos.z;
       if (pose === 'idle' && Math.hypot(dx, dz) < 3.5) yaw = Math.atan2(dx, dz);
+      const peer = this.chatPeer && G.npcs && G.npcs[this.chatPeer];
+      if (peer && pose !== 'sit' && s.seat === undefined && !this.pose) yaw = Math.atan2(peer.pos.x - this.pos.x, peer.pos.z - this.pos.z);
       if (this.pose) pose = this.pose;
       let a = yaw - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*6);
     }

@@ -10,6 +10,7 @@ export function setupBubbles(G){
   // 主人公と同じ場所（同じ部屋、または外どうし）にいる人だけ吹き出しを出す
   const together = n => { const room = n.spot && n.spot.room; if (n.following) return true; if (G.indoor && G.indoor !== 'class') return room === G.indoor; return !room || room === true || room === 'class'; };
   G.speaking = id => !!(els[id] && els[id].classList.contains('show'));
+  G.stopSpeak = id => { const b = els[id]; if (b){ b.classList.remove('show'); b.t = 0; } };
   G.bubbleUpdate = dt => { const r = G.renderer.domElement.getBoundingClientRect(), hide = G.paused || G.mapOpen || G.mode !== 'play';
     for (const id in els){ const b = els[id], n = G.npcs[id]; if (!b.classList.contains('show')) continue; b.t -= dt;
       if (b.t <= 0 || !n.root.visible || !together(n) || Math.hypot(n.pos.x - G.player.pos.x, n.pos.z - G.player.pos.z) > 45){ b.classList.remove('show'); continue; }

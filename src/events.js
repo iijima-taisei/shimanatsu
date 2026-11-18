@@ -51,7 +51,7 @@ export function setupGame(G){
     G.renderer.render(G.scene, G.camera); const c = document.createElement('canvas'); c.width = 400; c.height = 250; const src = G.renderer.domElement; const sw = Math.min(src.width, src.height*1.6), sh = sw/1.6;
     c.getContext('2d').drawImage(src, (src.width-sw)/2, (src.height-sh)/2, sw, sh, 0, 0, 400, 250); S().today.photo = c.toDataURL('image/jpeg', 0.72); };
   G.photo = () => { if (G.lock || dlg.busy) return; G.snap(true, true); S().today.manual = true; audio.shutter(); const f = document.getElementById('flash'); f.style.transition = 'none'; f.style.opacity = 0.9; requestAnimationFrame(() => { f.style.transition = 'opacity .5s'; f.style.opacity = 0; }); toast('写真を撮った。今日の日記にのる'); };
-  const run = async fn => { if (G.lock) return; G.lock = true; try { await fn(); } finally { closeDialogue(); G.lock = false; } };
+  const run = async fn => { if (G.lock) return; G.lock = true; if (G.npcai && G.npcai.interrupt) G.npcai.interrupt(); try { await fn(); } finally { closeDialogue(); G.lock = false; } };
   G.run = run;
   G.browseDiary = () => run(() => browseDiary(S().diary));
   const rideBike = async bike => {
