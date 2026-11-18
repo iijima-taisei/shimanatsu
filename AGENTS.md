@@ -352,3 +352,8 @@
 - terrain.js の buildSea（onBeforeCompile）に uSunDir / uSunCol / uSunVis / uCloud / uCamPos を追加し、波位相の法線と視線反射から昼の細波きらめきと朝夕の帯状ハイライト（光の道）を outgoingLight へ加算する（envmap_fragment 直後、既存の浅瀬波紋・汀線の泡は不変）。main.js の sea.update(time, sky, camera, cloud) で毎フレーム同期する。
 - 消灯条件：s_clear = (1 - smoothstep(0.12, 0.48, uCloud)) * clamp(uSunVis) で、夜間と曇天・雨天・台風時（cloud >= 0.48）は反射が消える。距離減衰で遠景の高周波を抑え、480pでもちらつかせない。
 - GLSL の smoothstep は edge0 < edge1 を厳守すること（逆転指定は未定義動作）。今回 s_lowSun と既存の foam の1箇所を 1.0 - smoothstep(...) 形式に統一した。
+
+## ベンチと足湯で同行者が隣に座る（2026-11-18）
+- ベンチ着席時に同行中（G.companion）の友達がいれば、座面幅方向に主人公 −0.38m / 同行者 +0.38m へ並べて座らせる（同行者がいないときは従来どおり中心に主人公のみ）。状態は実行時の npc.seatTogether のみで持ち、保存には入れない。
+- 足湯では暗転中に同行者を隣の石縁へ座らせ setBarefoot(true) と sit を即時反映してから fade を開けて G.snap() するので、素足で並んだ姿が日記写真に写る。
+- 維持と解除：NPC.update は主人公の着席中（非乗車・非荷台・屋外・同行中）だけ隣座りを維持する。歩き出し・teleport・部屋出入り・同行解除・荷台乗車・はね飛ばし・朝リセット・花火では clearSeatTogether で即座に立ち上がりと靴表示へ戻す（足湯からは石縁の外側へ退避）。

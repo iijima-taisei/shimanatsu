@@ -169,7 +169,13 @@ export function setupActivities(G){
   // ---- 足湯（温泉）----
   I.push({ x:-182, z:30, r:5.6, when: free, label:'足湯につかる', act: async () => { const st = S(); await fade(true); st.hour += 0.7;
     // 石の縁（中心から4.2m、高さ0.5m）に腰かけ、靴をぬいで足をお湯に入れる
-    { const cx = -182, cz = 30, a = Math.atan2(P.pos.z - cz, P.pos.x - cx); P.pos.x = cx + Math.cos(a)*4.2; P.pos.z = cz + Math.sin(a)*4.2; P.yaw = Math.atan2(cx - P.pos.x, cz - P.pos.z); P.sitting = true; P.seatDrop = 0.5 - 0.39; P.ch.setBarefoot(true); P.camYaw = P.yaw + Math.PI + 0.6; }
+    { const cx = -182, cz = 30, a = Math.atan2(P.pos.z - cz, P.pos.x - cx); P.pos.x = cx + Math.cos(a)*4.2; P.pos.z = cz + Math.sin(a)*4.2; P.yaw = Math.atan2(cx - P.pos.x, cz - P.pos.z); P.sitting = true; P.seatDrop = 0.5 - 0.39; P.ch.setBarefoot(true); P.camYaw = P.yaw + Math.PI + 0.6;
+      const c = G.companion ? G.npcs[G.companion] : null;
+      if (c){ if (c.knock || c.recover > 0){ c.knock = null; c.recover = 0; c.wet = false; c.back = null; c.wasFollowing = false; c.following = true; c.ch.setTumble(0, 0, 0); }
+        const ca = a + 0.19, nx = cx + Math.cos(ca)*4.2, nz = cz + Math.sin(ca)*4.2, cyaw = Math.atan2(cx - nx, cz - nz), drop = 0.5 - 0.39;
+        c.seatTogether = { x:nx, z:nz, yaw:cyaw, seatDrop:drop, barefoot:true };
+        c.pos.set(nx, (G.groundAt ? G.groundAt(nx, nz, heightAt(nx, nz) + 0.5) : heightAt(nx, nz)) + drop, nz);
+        c.yaw = cyaw; if (c.root) c.root.rotation.y = cyaw; c.ch.setBarefoot(true); c.ch.set('sit'); c.ch.update(1); } }
     await fade(false); G.snap();
     const eve = st.hour > 17.2 && st.hour < 19.4;
     await say('', eve ? '石の柱のあいだに夕日が落ちていく。\nお湯も空も、同じ色になった。' : 'ぬるめのお湯に足首までつかる。\n波の音と、遠くの船のエンジンの音。'); await say('', '……足の指がふやけてきた。'); once('onsenLog', eve ? '石柱の湯で、夕日を見ながら足湯につかった。' : '石柱の湯で足湯につかった。'); await withFriend('onsen'); toast('歩くと、お湯から上がって靴をはく', 2600); } });   // 歩きだすまで、足はお湯の中

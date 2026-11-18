@@ -46,7 +46,21 @@ export const SCHED = {
 };
 const FINAL = { nagisa:{ k:'fin', x:80, z:30.5, ry:PI/2, pose:'idle' }, kouta:{ k:'fin', x:83, z:35.5, ry:PI/2, pose:'idle' }, kotoha:{ k:'fin', x:78.5, z:38.5, ry:PI/2, pose:'idle' } };
 export class NPC {
-  constructor(id, scene, opt){ this.id = id; this.ch = new Character(opt); this.root = this.ch.root; this.pos = this.root.position; scene.add(this.root); this.spot = null; this.following = false; this.override = null; this.chatPeer = null; this.yaw = 0; this.photoT = 0; this.photoYaw = 0; }
+  constructor(id, scene, opt){ this.id = id; this.ch = new Character(opt); this.root = this.ch.root; this.pos = this.root.position; scene.add(this.root); this.spot = null; this.following = false; this.override = null; this.chatPeer = null; this.seatTogether = null; this.yaw = 0; this.photoT = 0; this.photoYaw = 0; }
+  // ベンチ・足湯の隣座り状態を即座に解除して立ち上がりと靴表示へ戻す
+  clearSeatTogether(P, G, snapPose = false){
+    const prev = this.seatTogether;
+    this.seatTogether = null;
+    const wasBarefoot = !!(prev?.barefoot || this.ch.barefoot);
+    if (this.ch.barefoot) this.ch.setBarefoot(false);
+    if (wasBarefoot && P && Math.hypot(this.pos.x + 182, this.pos.z - 30) < 4.7 && Math.hypot(P.pos.x - this.pos.x, P.pos.z - this.pos.z) < 8){
+      const dx = this.pos.x + 182, dz = this.pos.z - 30, d = Math.hypot(dx, dz) || 1;
+      this.pos.x = -182 + dx/d*5.05; this.pos.z = 30 + dz/d*5.05;
+    }
+    const gh = P?.room ? P.room.y : (G?.groundAt ? G.groundAt(this.pos.x, this.pos.z, this.pos.y) : heightAt(this.pos.x, this.pos.z));
+    this.pos.y = gh;
+    if (snapPose){ this.ch.set('idle'); this.ch.update(1); }
+  }
   setHold(kind){ if (kind === this.holdKind) return; this.holdKind = kind; for (const m of this.held || []) m.parent && m.parent.remove(m); this.held = [];
     if (!kind) return; const [right, left] = HELD[kind](); const n = this.ch.n;
     for (const [list, node] of [[right, n.foreR], [left, n.foreL]]) for (const m of list){ if (!node) continue; if (m.position.y === 0) m.position.set(0, -0.36, 0.06); node.add(m); this.held.push(m); } }
@@ -74,23 +88,34 @@ export class NPC {
   update(dt, G){
     const S = G.state, P = G.player; let pose = 'idle';
     // 軽トラの荷台に乗っている（位置は car.js が毎フレーム合わせる）
-    if (G.knockMove && G.knockMove(this, dt)){ if (this.photoT){ this.photoT = 0; this.ch.photoArm = false; this.ch.photoHeadYaw = null; } this.lookUpT = 0; return; }   // はね飛ばされている最中（knock.js）
+    if (G.knockMove && G.knockMove(this, dt)){ if (this.seatTogether || this.ch.barefoot) this.clearSeatTogether(P, G, true); if (this.photoT){ this.photoT = 0; this.ch.photoArm = false; this.ch.photoHeadYaw = null; } this.lookUpT = 0; return; }   // はね飛ばされている最中（knock.js）
     if (this.photoT > 0){ this.photoT = Math.max(0, this.photoT - dt); if (this.photoT === 0){ this.ch.photoArm = false; this.ch.photoHeadYaw = null; } }
     if (this.lookUpT > 0) this.lookUpT = Math.max(0, this.lookUpT - dt);
-    if (this.ride){ this.root.visible = true; this.ch.shadow.visible = false; this.doing = ''; this.setHold(null); this.root.rotation.y = this.yaw; this.ch.set('sit'); this.ch.update(dt); return; }
+    if (this.ride){ if (this.seatTogether || this.ch.barefoot) this.clearSeatTogether(P, G, false); this.root.visible = true; this.ch.shadow.visible = false; this.doing = ''; this.setHold(null); this.root.rotation.y = this.yaw; this.ch.set('sit'); this.ch.update(dt); return; }
     if (this.following){
-      const dx = P.pos.x - this.pos.x, dz = P.pos.z - this.pos.z, d = Math.hypot(dx, dz);
-      const gh = P.room ? P.room.y : G.groundAt(this.pos.x, this.pos.z, this.pos.y);
-      if (this.photoT > 0 && gh >= -1){ pose = 'photo'; let a = this.photoYaw - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*12); }
-      else {
-        if (d > 40){ this.pos.x = P.pos.x - 1.5; this.pos.z = P.pos.z - 1.5; }
-        else if (d > (G.aiai === this.id ? 0.8 : 2.1)){ /* 相合傘のときは、すぐそばを歩く */ const sp = d > 6 ? 8.6 : d > 3.2 ? 4.2 : 2.6; this.pos.x += dx/d*sp*dt; this.pos.z += dz/d*sp*dt; pose = sp > 5 ? 'run' : 'walk'; const ty = Math.atan2(dx, dz); let a = ty - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*10); }
-        else if (this.pose && gh >= -1){ pose = this.pose; if (d > 0.1){ let a = Math.atan2(dx, dz) - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*10); } }
-        else if (this.lookUpT > 0 && gh >= -1){ pose = 'lookup'; if (this.lookUpYaw != null){ let a = this.lookUpYaw - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*8); } }
+      const keepSeat = !!(this.seatTogether && P.sitting && !P.carry && !P.riding && !P.driving && !P.room && G.companion === this.id);
+      if (this.seatTogether && !keepSeat) this.clearSeatTogether(P, G, Math.hypot(P.pos.x - this.pos.x, P.pos.z - this.pos.z) > 8 || !!P.room);
+      if (keepSeat){
+        const seat = this.seatTogether, sgh = G.groundAt ? G.groundAt(seat.x, seat.z, this.pos.y) : heightAt(seat.x, seat.z);
+        this.pos.x = seat.x; this.pos.z = seat.z; this.pos.y = sgh + seat.seatDrop;
+        this.yaw = seat.yaw; pose = 'sit';
+        if (seat.barefoot && !this.ch.barefoot) this.ch.setBarefoot(true);
+        this.root.visible = true; this.ch.shadow.visible = sgh >= -1;
+      } else {
+        const dx = P.pos.x - this.pos.x, dz = P.pos.z - this.pos.z, d = Math.hypot(dx, dz);
+        const gh = P.room ? P.room.y : (G.groundAt ? G.groundAt(this.pos.x, this.pos.z, this.pos.y) : heightAt(this.pos.x, this.pos.z));
+        if (this.photoT > 0 && gh >= -1){ pose = 'photo'; let a = this.photoYaw - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*12); }
+        else {
+          if (d > 40){ this.pos.x = P.pos.x - 1.5; this.pos.z = P.pos.z - 1.5; }
+          else if (d > (G.aiai === this.id ? 0.8 : 2.1)){ /* 相合傘のときは、すぐそばを歩く */ const sp = d > 6 ? 8.6 : d > 3.2 ? 4.2 : 2.6; this.pos.x += dx/d*sp*dt; this.pos.z += dz/d*sp*dt; pose = sp > 5 ? 'run' : 'walk'; const ty = Math.atan2(dx, dz); let a = ty - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*10); }
+          else if (this.pose && gh >= -1){ pose = this.pose; if (d > 0.1){ let a = Math.atan2(dx, dz) - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*10); } }
+          else if (this.lookUpT > 0 && gh >= -1){ pose = 'lookup'; if (this.lookUpYaw != null){ let a = this.lookUpYaw - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*8); } }
+        }
+        if (gh < -1){ pose = 'swim'; this.pos.y += (-0.95 - this.pos.y)*Math.min(1, dt*10); } else this.pos.y += (gh - this.pos.y)*Math.min(1, dt*12);
+        this.root.visible = true; this.ch.shadow.visible = gh >= -1;
       }
-      if (gh < -1){ pose = 'swim'; this.pos.y += (-0.95 - this.pos.y)*Math.min(1, dt*10); } else this.pos.y += (gh - this.pos.y)*Math.min(1, dt*12);
-      this.root.visible = true; this.ch.shadow.visible = gh >= -1;
     } else {
+      if (this.seatTogether || this.ch.barefoot) this.clearSeatTogether(P, G, true);
       const bon = S.day === BON.day && S.hour >= BON.from && S.hour < BON.to && BON.slots[this.id] !== undefined;
       const storm = S.day === TYPHOON_DAY ? ((STORM[this.id] && STORM[this.id](S.hour)) || { k:'stormhome', x:this.pos.x, z:this.pos.z, ry:0, pose:'idle', hide:true }) : null;
       const want = this.override || storm || (bon ? { k:'bon', x:BON.x, z:BON.z + BON.r, ry:0, pose:'dance' } : (S.day === 11 && S.hour >= 17 && FINAL[this.id]) ? FINAL[this.id] : SCHED[this.id](S.day, S.hour));

@@ -191,8 +191,8 @@ export function setupGame(G){
     for (const k in W.interiors) W.interiors[k].visible = k === id; G.outdoor.visible = !id || id === 'class' || id === 'home'; P.room = id ? ROOMS[id] : null; P.camDist = id ? 3.4 : 6.2; P.sitting = false; P.carry = null; };
   const companion = () => G.companion ? G.npcs[G.companion] : null;
   const enter = async (id='class') => { const d = DOORS[id], h = S().hour; if (S().day === TYPHOON_DAY && T.STORM_CLOSED[id]){ await say('', T.STORM_CLOSED[id]); return; } if (h < d.open[0] || h >= d.open[1]){ await say('', d.closed); return; }
-    await fade(true, 250); setIndoor(id); P.teleport(d.in[0], d.in[1], d.in[2]); P.camYaw = d.camYaw; const c = companion(); if (c) c.pos.set(d.in[0] + 0.9, ROOMS[id].y, d.in[1] + 0.3); audio.tone(880, 0.08, { vol:0.04 }); await fade(false, 250); };
-  const exit = async () => { const d = DOORS[G.indoor]; if (!d) return; await fade(true, 250); setIndoor(false); P.teleport(d.out[0], d.out[1], d.out[2]); const c = companion(); if (c){ const x = d.out[0] + 1.2, z = d.out[1]; c.pos.set(x, heightAt(x, z), z); } await fade(false, 250); };
+    await fade(true, 250); setIndoor(id); P.teleport(d.in[0], d.in[1], d.in[2]); P.camYaw = d.camYaw; const c = companion(); if (c){ c.seatTogether = null; if (c.ch?.barefoot) c.ch.setBarefoot(false); c.pos.set(d.in[0] + 0.9, ROOMS[id].y, d.in[1] + 0.3); } audio.tone(880, 0.08, { vol:0.04 }); await fade(false, 250); };
+  const exit = async () => { const d = DOORS[G.indoor]; if (!d) return; await fade(true, 250); setIndoor(false); P.teleport(d.out[0], d.out[1], d.out[2]); const c = companion(); if (c){ c.seatTogether = null; if (c.ch?.barefoot) c.ch.setBarefoot(false); const x = d.out[0] + 1.2, z = d.out[1]; c.pos.set(x, heightAt(x, z), z); } await fade(false, 250); };
   const enterRoom = () => enter('class'), exitRoom = exit;
 
   // ---- 会話 ----
@@ -257,7 +257,7 @@ export function setupGame(G){
     await chat(id); if (!opts.length) return; opts.push('やめる'); acts.push('no');
     const a = acts[await choose(N[id], '……', opts)];
     if (a === 'walk'){ await talk(T.INVITE[id]); npc.following = true; G.companion = id; toast(N[id] + 'といっしょに、行ってみたい場所まで歩こう'); }
-    else if (a === 'part'){ await talk(T.PART[id]); npc.following = false; G.companion = null; npc.spot = null; }
+    else if (a === 'part'){ await talk(T.PART[id]); npc.following = false; npc.seatTogether = null; if (npc.ch?.barefoot) npc.ch.setBarefoot(false); G.companion = null; npc.spot = null; }
     else if (a === 'ramune'){ st.ramune--; st.today.gave[id] = true; await talk(T.RAMUNE_GIVE[id]); friend(id, 1); log(N[id] + 'にラムネをあげた。'); }
     else if (a === 'swim'){ await talk(T.SWIM.slice(0, 1)); await fade(true); P.dismountBike(true); st.hour += 1.5; st.today.swim = true; P.teleport(90, 36, -Math.PI/2); await fade(false); G.snap(); await talk(T.SWIM.slice(1)); friend('kouta', 2); log('航太と海で泳いだ。競争には負けた。'); }
     else if (a === 'aiaiIn'){ await talk(T.AIAI_IN[id]); await G.startAiai(id, 'npc'); }
@@ -365,7 +365,15 @@ export function setupGame(G){
   // ---- ベンチ・貝がら・家 ----
   // 4つめは座面の高さ（展望台のベンチ 0.5、ふつうのベンチ 0.45、商店の前の縁台 0.55）
   for (const [x, z, ry, h] of [[-34, -65.6, 0, 0.5], [-190, 248.4, 0, 0.5], [68, 26, Math.PI/2, 0.45], [112, -152, Math.PI/2, 0.45], [-224, 80, -Math.PI/2, 0.45], [44, -19.5, Math.PI, 0.45], [-81.95, 61.8, Math.PI, 0.55], [-391, 65.5, -Math.PI/2, 0.45]])
-    I.push({ x, y:heightAt(x, z) + h, z, r:1.3, when: () => !P.sitting && !G.indoor, label:'すわる', act: async () => { P.dismountBike(true); P.pos.x = x; P.pos.z = z; P.yaw = ry; P.sitting = true; P.seatDrop = h - 0.39; } });
+    I.push({ x, y:heightAt(x, z) + h, z, r:1.3, when: () => !P.sitting && !G.indoor, label:'すわる', act: async () => { P.dismountBike(true); const c = companion(), drop = h - 0.39;
+      if (c){ if (c.knock || c.recover > 0){ c.knock = null; c.recover = 0; c.wet = false; c.back = null; c.wasFollowing = false; c.following = true; c.ch.setTumble(0, 0, 0); }
+        const sx = Math.cos(ry), sz = -Math.sin(ry), cx = x + sx*0.38, cz = z + sz*0.38;
+        P.pos.x = x - sx*0.38; P.pos.z = z - sz*0.38;
+        c.seatTogether = { x:cx, z:cz, yaw:ry, seatDrop:drop, barefoot:false };
+        c.pos.set(cx, (G.groundAt ? G.groundAt(cx, cz, heightAt(cx, cz) + 0.5) : heightAt(cx, cz)) + drop, cz);
+        c.yaw = ry; if (c.root) c.root.rotation.y = ry; c.ch.setBarefoot(false); c.ch.set('sit'); c.ch.update(1);
+      } else { P.pos.x = x; P.pos.z = z; }
+      P.yaw = ry; P.sitting = true; P.seatDrop = drop; } });
   for (const s of W.shells) I.push({ x:s.x, y:(s.mesh ? s.mesh.position.y : heightAt(s.x, s.z)) + 0.1, z:s.z, r:1.4, when: () => !S().shells.includes(s.id), label:'貝がらを拾う', act: async () => { S().shells.push(s.id); G.observe && G.observe('shell', s.x, s.z); s.mesh.visible = false; audio.pickup(); toast(`貝がらを拾った（${S().shells.length} / ${W.shells.length}）`); log('浜で貝がらを拾った。'); } });
   for (const c of W.cats) I.push({ x:c.x, y:(c.mesh ? c.mesh.position.y : heightAt(c.x, c.z) + 1.4) + 0.2, z:c.z, r:1.9, when: () => !G.indoor, label:'ねこをなでる', act: async () => { G.observe && G.observe('cat', c.x, c.z); audio.tone(700, 0.25, { vol:0.08, slide:1.5 }); audio.tone(900, 0.3, { vol:0.06, slide:0.7, when:0.22 }); await say('', S().today.cat ? 'ねこは目を細めてじっとしている。' : 'ねこは一度だけ「にゃ」と鳴いて、また海のほうを向いた。'); if (!S().today.cat){ S().today.cat = true; log('塀の上のねこをなでた。'); } } });
   I.push({ x:HOME.x, z:HOME.z + 4.4, r:2.2, when: () => !G.indoor, label:T.HOME_ENTER, act: () => enter('home') });
@@ -666,7 +674,7 @@ export function setupGame(G){
       if (!P.driving && !P.riding && !st.today.meteorLog){ st.today.meteorLog = true; toast('あ、流れ星……'); log('夜空を横切る流れ星を見た。'); } }); }
   // ---- 1日のはじまり・おわり ----
   const hud = () => { const st = S(); G.applyPrep(); W.shells.forEach(s => s.mesh.visible = !st.shells.includes(s.id)); };
-  const startDay = async (first) => { const st = S(); st.hour = 7; st.today = { log:[], talked:{}, gave:{} }; G.companion = null; for (const k in G.npcs){ G.npcs[k].following = false; G.npcs[k].spot = null; G.npcs[k].override = null; G.npcs[k].photoT = 0; if (G.npcs[k].ch){ G.npcs[k].ch.photoArm = false; G.npcs[k].ch.photoHeadYaw = null; } }
+  const startDay = async (first) => { const st = S(); st.hour = 7; st.today = { log:[], talked:{}, gave:{} }; G.companion = null; for (const k in G.npcs){ const n = G.npcs[k]; n.following = false; n.spot = null; n.override = null; n.seatTogether = null; n.photoT = 0; if (n.ch){ n.ch.photoArm = false; n.ch.photoHeadYaw = null; if (n.ch.barefoot) n.ch.setBarefoot(false); n.ch.set('idle'); n.ch.update(1); } }
     P.dismountBike(true);
     for (const b of W.bikes){ const { mesh, home } = b; b.fly = null; mesh.position.set(home.x, home.y, home.z); mesh.rotation.set(0, home.ry, 0); mesh.visible = true; }
     if (G.resetCars) G.resetCars(); if (G.resetPlane) G.resetPlane(); if (G.schoolReset) G.schoolReset();
@@ -680,7 +688,7 @@ export function setupGame(G){
   G.startDay = () => run(() => startDay(true)); G.endDay = () => run(endDay);
 
   // ---- 最終日の花火とエピローグ ----
-  const finale = async () => { const st = S(); if (!P.dismountBike()) P.dismountBike(true); st.flags.finale = true; for (const k of ['nagisa', 'kouta', 'kotoha']){ G.npcs[k].following = false; G.npcs[k].spot = null; } G.companion = null;
+  const finale = async () => { const st = S(); if (!P.dismountBike()) P.dismountBike(true); st.flags.finale = true; for (const k of ['nagisa', 'kouta', 'kotoha']){ const n = G.npcs[k]; n.following = false; n.spot = null; n.seatTogether = null; if (n.ch?.barefoot) n.ch.setBarefoot(false); } G.companion = null;
     if (st.flags.metOneesan){ G.npcs.oneesan.override = { k:'fin', x:69.5, z:28.5, ry:Math.PI/2, pose:'lookup' }; G.npcs.oneesan.spot = null; }
     await talk(T.FINAL_CALL); await fade(true); st.hour = 19.85; P.teleport(76.5, 34.5, Math.PI/2); P.camYaw = -Math.PI/2 - 0.25; P.camPitch = -0.05; P.camDist = 8.5; G.timeStop = true; for (const k of ['nagisa', 'kouta', 'kotoha']) G.npcs[k].pose = 'lookup'; P.pose = 'lookup';
     await fade(false, 1500); await wait(600); G.fireworks.on = true; await talk(T.FINAL_FIRE.common); await wait(2500); G.snap(true);
