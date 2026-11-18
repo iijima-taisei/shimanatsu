@@ -306,3 +306,8 @@
 - 徒歩のみコヨーテタイム 0.10 秒と先行入力バッファ 0.12 秒を追加（player.js の COYOTE / JUMP_BUF）。着地した瞬間にバッファが発火し、受け身（rollT）・水泳・ロック中は発火しない。乗車・テレポート時は両タイマーを破棄する。重力（上昇22/下降34）と受け身の条件は不変。
 - 足元の材質判定は player.surface()（wood/shallow/road/dirt/sand/grass）。校舎の床は school.js が setGround の第2引数で schoolFloor を渡す。道路種別は terrain.js の roadKindAt（線分判定、舗装優先）、台は platformAt で判定する。
 - 足音は audio.step(swim, surf, indoor)、着地音は audio.land(surf, v, indoor) が材質別の合成パラメータ（audio.js の SURF_STEP / SURF_LAND）で切り替える。着地の土ぼこりは G.puff の第5引数 opt（色・サイズ・不透明度・上向き速度、既定値は従来どおり）で材質別に変える。室内は音量・土ぼこりとも控えめ。
+
+## 調べる・話す対象の向き優先選択と主人公の首振り（2026-11-18）
+- 対象選択は src/interact.js の pickInteractTarget に集約。徒歩時はスコア = 距離 + 角度差(rad) × 1.25 で向きを優先し、乗車中は従来どおり距離のみ（降車＝距離0の対象を遮らない）。範囲判定（d < r）と when() の条件は従来と等価。
+- 選択中の対象へ主人公の頭を向ける（player.js の updateHeadLook）。ヨー ±0.85・ピッチ ±0.45 rad にクランプし、指数平滑化（rate 10）。ch.update の前に clearHeadLook で前フレームのオフセットを差し戻してから後段で加算する（アニメーション補間と蓄積競合させない）。一人称・乗車・水泳・受け身・ポーズ中は向けない。
+- 対象の高さは各インタラクト対象の y（未定義なら pos.y + 1.25）を使う。対象が切り替わった瞬間だけ #prompt に pop アニメーション（ui.css）を付ける。

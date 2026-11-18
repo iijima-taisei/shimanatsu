@@ -25,6 +25,7 @@ import { setupItems } from './items.js';
 import { BIND, DEFAULT, saveBind, keyName, pollPad, SETTINGS, saveSettings, gearName } from './keys.js';
 import { setEngine } from './player.js';
 import { skipDialogue } from './dialogue.js';
+import { pickInteractTarget } from './interact.js';
 import { DATES, BIKE, PREP_TASKS, NAMES, FARE } from '../data/story.js';
 import { ROADS, ROAD_PTS } from './world/terrain.js';
 
@@ -75,7 +76,7 @@ function begin(state){
 $('start').onclick = () => begin(newState()); $('continue').onclick = () => begin(Object.assign(newState(), saved));
 
 // ---- 入力 ----
-let target = null;
+let target = null, prevTarget = null;
 // ---- 一時停止とキー設定（Esc／START）----
 let capture = null;
 const pauseEl = $('pause');
@@ -162,9 +163,13 @@ function tick(dt){
   sea.update(G.time); W.update(G.time); sky.update(Math.min(S.hour, 23.9), player.pos, dt, camera); G.weather.update(dt, sky, player);
   { const nk = G.blackout ? 0 : Math.max(0, Math.min(1, (Math.min(S.hour, 23.9) - 17.9)/1.2 + G.weatherNow.cloud*0.35)); setNight(nk); W.setNight(nk); }
   G.fireworks.update(dt, G.time); if (G.fireworks.flash > 0){ sky.hemi.intensity += G.fireworks.flash*0.9; sky.hemi.color.lerp(G.fireworks.col, G.fireworks.flash*0.5); }
-  // 調べられるもの
-  target = null; if (G.mode === 'play' && !G.lock && !dlg.busy && !player.driving){ let best = 1e9; for (const it of G.interact){ const d = Math.hypot(player.pos.x - it.x, player.pos.z - it.z); if (d < it.r && d < best && it.when()){ best = d; target = it; } } }
-  const pr = $('prompt'); if (G.promptOverride){ pr.textContent = G.promptOverride; pr.style.opacity = 1; } else if (player.carry && !player.locked && !player.carry.car.busy){ pr.textContent = '歩くと荷台に立ち上がる'; pr.style.opacity = 1; } else if (target){ pr.textContent = `［${keyName(BIND.interact)}］` + (typeof target.label === 'function' ? target.label() : target.label) + (player.riding ? '　［B］降りる' : ''); pr.style.opacity = 1; }
+  // 調べられるもの（向き優先で選び、主人公の顔を向ける）
+  target = (G.mode === 'play' && !G.lock && !dlg.busy && !player.driving) ? pickInteractTarget(G.interact, player.pos, player.yaw, !!player.riding) : null;
+  player.updateHeadLook(target, dt);
+  const pr = $('prompt');
+  const shownTarget = (!G.promptOverride && !(player.carry && !player.locked && !player.carry.car.busy)) ? target : null;
+  if (shownTarget !== prevTarget){ prevTarget = shownTarget; if (shownTarget){ pr.classList.remove('pop'); void pr.offsetWidth; pr.classList.add('pop'); } else pr.classList.remove('pop'); }
+  if (G.promptOverride){ pr.textContent = G.promptOverride; pr.style.opacity = 1; } else if (player.carry && !player.locked && !player.carry.car.busy){ pr.textContent = '歩くと荷台に立ち上がる'; pr.style.opacity = 1; } else if (target){ pr.textContent = `［${keyName(BIND.interact)}］` + (typeof target.label === 'function' ? target.label() : target.label) + (player.riding ? '　［B］降りる' : ''); pr.style.opacity = 1; }
   else if (player.riding && !player.locked){ const mp = player.riding.kind === 'moped'; pr.textContent = mp ? `［B］原付から降りる　${SETTINGS.drive === 'manual' ? gearName(player.gear) + '　' : ''}${Math.round(player.bikeSpeed*3.6)} km/h` : BIKE.riding; pr.style.opacity = 1; }
   else if (player.driving && !player.locked){ pr.textContent = `［B］軽トラから降りる　${SETTINGS.drive === 'manual' ? gearName(player.gear) + '　' : ''}${Math.round(Math.abs(player.carSpeed)*3.6)} km/h${keys.Space && Math.abs(player.carSpeed) > 4 ? '　ドリフト！' : ''}`; pr.style.opacity = 1; }
   else pr.style.opacity = 0;

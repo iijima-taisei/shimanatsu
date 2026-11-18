@@ -56,7 +56,7 @@ export function setupCars(G){
   P.exitCar = leave;
   G.resetCars = () => { if (P.driving) leave(true); P.carry = null; for (const k in G.npcs) G.npcs[k].ride = null; drive = null;
     for (const car of W.cars){ car.mesh.position.set(car.home.x, car.home.y, car.home.z); car.mesh.rotation.set(0, car.home.ry, 0); car.mesh.updateMatrixWorld(true); car.water = 0; car.col.off = car.bed.off = false; syncCol(car); } };
-  for (const car of W.cars) I.push({ get x(){ return car.mesh.position.x; }, get z(){ return car.mesh.position.z; }, r:2.7, when: () => !G.indoor && !P.riding && !P.driving && !P.swimming && !P.carry && !car.busy && !onBed() && Math.abs(P.pos.y - car.mesh.position.y) < 1.5, label:'軽トラに乗る', act: () => enter(car) });
+  for (const car of W.cars) I.push({ get x(){ return car.mesh.position.x; }, get y(){ return car.mesh.position.y + 1.0; }, get z(){ return car.mesh.position.z; }, r:2.7, when: () => !G.indoor && !P.riding && !P.driving && !P.swimming && !P.carry && !car.busy && !onBed() && Math.abs(P.pos.y - car.mesh.position.y) < 1.5, label:'軽トラに乗る', act: () => enter(car) });
   // 荷台の上で：腰かける。友達がいっしょなら、友達も飛び乗ってくる
   I.push({ get x(){ return P.pos.x; }, get z(){ return P.pos.z; }, r:0.5, when: () => !G.indoor && !P.sitting && !P.carry && !!onBed() && !onBed().car.busy, label:'荷台に腰かける', act: async () => {
     const car = onBed().car, c = G.companion && G.npcs[G.companion]; P.carry = { car, seat:1 }; P.sitting = true; carryUpdate();

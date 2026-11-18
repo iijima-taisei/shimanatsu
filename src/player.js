@@ -13,6 +13,7 @@ let floor = () => null;
 export const setGround = (fn, floorFn) => { ground = fn; if (floorFn) floor = floorFn; };
 const gAt = (y, x, z) => ground(x, z, y);
 import { Character } from './models.js';
+import { computeHeadLook, smoothHeadLook } from './interact.js';
 export const keys = {};
 export class Player {
   constructor(scene, camera, colliders){
@@ -21,6 +22,7 @@ export class Player {
     this.yaw = 0; this.camYaw = Math.PI; this.camPitch = 0.28; this.camDist = 6.2; this.locked = false; this.swimming = false; this.sitting = false;
     this.camPos = new THREE.Vector3(); this.look = new THREE.Vector3(); this.moved = 0;
     this.riding = null; this.bikeSpeed = 0; this.bikePhase = 0;
+    this.headLook = { yaw: 0, pitch: 0 }; this._headApplied = { yaw: 0, pitch: 0 };
     this.air = 0; this.vy = 0;   // 地面からの高さと上下の速さ（ジャンプ・落下）
     this.coyote = 0; this.jumpBuf = 0; this.jumped = false;
     addEventListener('keydown', e => {
@@ -74,7 +76,7 @@ export class Player {
   // 上下の動き。ground は足元の高さ。着地したら true
   // 上がるときより、落ちるときの重力を強くする（ふわっとせず、着地に手応えが出る）
   fly(dt, ground){ this.vy -= (this.vy > 0 ? 22 : 34)*dt; const y = this.pos.y + this.vy*dt; if (y <= ground){ const hard = this.vy; this.air = 0; this.vy = 0; this.pos.y = ground; this.landSpeed = -hard; this.landed = -hard; return true; } this.pos.y = y; this.air = y - ground; return false; }
-  teleport(x, z, yaw=0, yHint=999){ this.air = 0; this.vy = 0; this.coyote = 0; this.jumpBuf = 0; this.jumped = false; this.carry = null; if (this.driving) this.exitCar(true); if (this.riding) this.dismountBike(true); this.pos.set(x, this.room ? this.room.y : gAt(yHint, x, z), z); this.yaw = yaw; this.camYaw = yaw + Math.PI; this.snap = true; }
+  teleport(x, z, yaw=0, yHint=999){ this.air = 0; this.vy = 0; this.coyote = 0; this.jumpBuf = 0; this.jumped = false; this.carry = null; this.clearHeadLook(); this.headLook.yaw = 0; this.headLook.pitch = 0; if (this.driving) this.exitCar(true); if (this.riding) this.dismountBike(true); this.pos.set(x, this.room ? this.room.y : gAt(yHint, x, z), z); this.yaw = yaw; this.camYaw = yaw + Math.PI; this.snap = true; }
   // どれだけ深く物に重なっているか（0なら当たっていない）。軽トラが、めりこんだ状態から抜け出せるようにするために使う
   depthAt(x, z, radius=0.35){ let m = 0;
     for (const c of this.col){ if (c.off || (c.y1 !== undefined && (this.pos.y + 0.5 < c.y0 || this.pos.y > c.y1))) continue; let d;   // 校舎の壁は、その階にいるときだけ
@@ -184,6 +186,7 @@ export class Player {
     for (const wheel of this.riding.wheels||[]) wheel.rotation.z-=moved/0.33;
     if (len>0.01 && !moped) this.bikePhase+=moved/(0.33*2.4);   // 原付はペダルをこがない
     if (moped) audio_engine(SETTINGS.drive==='manual' ? 3+Math.min(1.1,this.rpm||0)*13 : this.bikeSpeed*0.9);
+    this.clearHeadLook();
     this.ch.cyclePhase=this.bikePhase; this.ch.set('cycle'); this.ch.update(dt); this.syncBike();
     if (!this.camOverride) this.updateCam(dt);
   }
@@ -200,7 +203,7 @@ export class Player {
     // 軽トラの荷台に腰かけている。とまっている車なら、歩くと荷台の上に立ち上がる
     if (this.carry){ const car = this.carry.car;
       if (!this.locked && !car.busy && Math.hypot(mx, mz) > 0.1){ this.carry = null; this.sitting = false; const p = car.mesh.position; this.pos.set(p.x - Math.sin(car.mesh.rotation.y)*0.6, p.y + 0.68, p.z - Math.cos(car.mesh.rotation.y)*0.6); }
-      else { this.carryUpdate(); this.air = 0; this.vy = 0; this.coyote = 0; this.jumpBuf = 0; this.moving = false; this.swimming = false; this.root.rotation.y = this.yaw; this.ch.shadow.visible = false; this.ch.set(this.pose || 'sit'); this.ch.update(dt);
+      else { this.carryUpdate(); this.air = 0; this.vy = 0; this.coyote = 0; this.jumpBuf = 0; this.moving = false; this.swimming = false; this.root.rotation.y = this.yaw; this.ch.shadow.visible = false; this.clearHeadLook(); this.ch.set(this.pose || 'sit'); this.ch.update(dt);
         if (!this.camOverride){ if (car.busy){ let d = car.mesh.rotation.y + Math.PI - this.camYaw; d = Math.atan2(Math.sin(d), Math.cos(d)); this.camYaw += d*Math.min(1, dt*1.2); } this.updateCam(dt); } return; } }
     if (this.riding){ this.coyote = 0; this.jumpBuf = 0; this.updateBike(dt,mx,mz); return; }
     if (this.rollT > 0){ mx = 0; mz = 0; }   // 受け身の最中は動かせない
@@ -265,6 +268,7 @@ export class Player {
       const nx = this.pos.x + Math.sin(this.yaw)*2.6*dt, nz = this.pos.z + Math.cos(this.yaw)*2.6*dt; if (this.clearAt(nx, nz)){ this.pos.x = nx; this.pos.z = nz; } }
     if (tumble || this.tumbling){ this.ch.setTumble(tumble % (Math.PI*2), side, lie); this.tumbling = !!tumble; }
     this.root.rotation.y = this.yaw; this.ch.shadow.visible = !this.swimming && this.air < 0.05;
+    this.clearHeadLook();
     this.ch.set(this.pose || (this.rollT > 0 ? 'roll' : this.flip ? 'jump' : (this.air > 0.05 ? 'jump' : this.swimming ? 'swim' : this.sitting ? 'sit' : len>0.01 ? (run?'run':'walk') : 'idle'))); this.ch.update(dt);
     if (this.rollT > 0){ const b = this.ch.base; this.ch.root.updateMatrixWorld(true); const lo = ROLLBOX.setFromObject(b, true).min.y; b.position.y += this.pos.y + 0.02 - lo; }   // 転がっている間は、体のいちばん低い所を地面にそろえる（もぐらない・浮かない）
     this.moving = len>0.01; this.running = run && this.moving; if (this.running || this.air > 0.05) this.loudT = performance.now();   // セミ取り：走った・跳んだ時刻
@@ -307,4 +311,29 @@ export class Player {
   // 部屋の中でカメラが動ける箱（壁・天井から、画面の手前の切れ目ぶん内側）
   roomBox(){ const r = this.room; if (!r || !r.walls) return null; const [hx, hz, h] = r.walls, m = 0.45;
     return [r.x - hx + m, r.x + hx - m, r.y + 0.3, r.y + h - 0.35, r.z - hz + m, r.z + hz - m]; }
+  // 前フレームに加えた首振りオフセットを外し、ch.update がアニメーション角度だけを補間できるようにする
+  clearHeadLook(){
+    const head = this.ch.n.head;
+    if (head){
+      head.rotation.x -= this._headApplied.pitch;
+      head.rotation.y -= this._headApplied.yaw;
+    }
+    this._headApplied.yaw = 0;
+    this._headApplied.pitch = 0;
+  }
+  // 選択中の対象へ頭を緩やかに向ける（一人称や乗車・水泳・受け身・操作停止中は正面へ戻す）
+  updateHeadLook(target, dt){
+    this.clearHeadLook();
+    const active = !!(target && !this.locked && !this.driving && !this.riding && !this.carry
+      && !this.swimming && !(this.rollT > 0) && !this.pose && !this.firstPerson && !this.frozen);
+    const goal = active ? computeHeadLook(this.pos, this.yaw, target, { sitting: this.sitting }) : { yaw: 0, pitch: 0 };
+    this.headLook = smoothHeadLook(this.headLook, goal, dt);
+    const head = this.ch.n.head;
+    if (head && !this.firstPerson){
+      head.rotation.x += this.headLook.pitch;
+      head.rotation.y += this.headLook.yaw;
+      this._headApplied.pitch = this.headLook.pitch;
+      this._headApplied.yaw = this.headLook.yaw;
+    }
+  }
 }

@@ -65,7 +65,7 @@ export function setupGame(G){
   };
   G.leaveBike = leaveBike;
   for (const bike of W.bikes) I.push({
-    get x(){ return bike.mesh.position.x; }, get z(){ return bike.mesh.position.z; }, r:1.8,
+    get x(){ return bike.mesh.position.x; }, get y(){ return bike.mesh.position.y + 0.75; }, get z(){ return bike.mesh.position.z; }, r:1.8,
     when:() => !G.indoor && !P.riding && !P.swimming && Math.abs(P.pos.y-bike.mesh.position.y)<1,
     label:bike.kind === 'moped' ? '原付に乗る' : T.BIKE.ride, act:() => rideBike(bike),
   });
@@ -179,7 +179,7 @@ export function setupGame(G){
     else if (a === 'aiaiGive'){ await talk(T.AIAI_GIVE[id]); await G.startAiai(id, 'player'); }
     else if (a === 'sketch'){ await talk(T.SKETCH); st.today.sketch = true; friend('kotoha', 2); log('ことはのスケッチブックを見せてもらった。'); }
   };
-  for (const id of ['nagisa', 'kouta', 'kotoha', 'granny', 'oneesan', 'ojisan', ...T.FAMILY]) I.push({ get x(){ return G.npcs[id].pos.x; }, get z(){ return G.npcs[id].pos.z; }, r:2.3, when: () => G.npcs[id].root.visible && Math.abs(G.npcs[id].pos.y - P.pos.y) < 2.5 && !(S().day === 11 && S().hour >= 17 && id !== 'granny'), label: () => (id === 'oneesan' && !S().flags.metOneesan ? '麦わら帽子の人' : id === 'ojisan' && !S().flags.metOjisan ? '日に焼けたおじさん' : N[id]) + 'と話す' + (G.npcs[id].doing ? `（${G.npcs[id].doing}）` : ''), act: () => talkTo(id) });
+  for (const id of ['nagisa', 'kouta', 'kotoha', 'granny', 'oneesan', 'ojisan', ...T.FAMILY]) I.push({ get x(){ return G.npcs[id].pos.x; }, get y(){ return G.npcs[id].pos.y + (id === 'sister' ? 1.15 : 1.5); }, get z(){ return G.npcs[id].pos.z; }, r:2.3, when: () => G.npcs[id].root.visible && Math.abs(G.npcs[id].pos.y - P.pos.y) < 2.5 && !(S().day === 11 && S().hour >= 17 && id !== 'granny'), label: () => (id === 'oneesan' && !S().flags.metOneesan ? '麦わら帽子の人' : id === 'ojisan' && !S().flags.metOjisan ? '日に焼けたおじさん' : N[id]) + 'と話す' + (G.npcs[id].doing ? `（${G.npcs[id].doing}）` : ''), act: () => talkTo(id) });
 
   // ---- 文化祭の準備 ----
   const doPrep = async () => { const st = S(), nag = G.npcs.nagisa, here = nag.root.visible && nag.spot && nag.spot.room && !nag.following || G.companion === 'nagisa';
@@ -207,14 +207,14 @@ export function setupGame(G){
     $('whint').textContent = task.done; audio.pickup(); await wait(1500); $('work').classList.add('hidden');
     for (const [m, mat] of saved){ m.material.dispose(); m.material = mat; }   /* 切り取りは校舎の階の表示でも使うので、切らない */ P.pose = null; };
   // 校舎には昇降口から歩いて（自転車でも）そのまま入れる（school.js）。自分の教室は3階
-  I.push({ x:38.8, z:-61.4, r:1.7, when: () => G.inSchool && P.pos.y > 16, label: () => S().prep < 5 ? `文化祭の準備：${T.PREP_TASKS[S().prep].name}` : '教室をながめる', act: doPrep });
+  I.push({ x:38.8, y:17.5, z:-61.4, r:1.7, when: () => G.inSchool && P.pos.y > 16, label: () => S().prep < 5 ? `文化祭の準備：${T.PREP_TASKS[S().prep].name}` : '教室をながめる', act: doPrep });
 
   // ---- ベンチ・貝がら・家 ----
   // 4つめは座面の高さ（展望台のベンチ 0.5、ふつうのベンチ 0.45、商店の前の縁台 0.55）
   for (const [x, z, ry, h] of [[-34, -65.6, 0, 0.5], [-190, 248.4, 0, 0.5], [68, 26, Math.PI/2, 0.45], [112, -152, Math.PI/2, 0.45], [-224, 80, -Math.PI/2, 0.45], [44, -19.5, Math.PI, 0.45], [-81.95, 61.8, Math.PI, 0.55], [-391, 65.5, -Math.PI/2, 0.45]])
-    I.push({ x, z, r:1.3, when: () => !P.sitting && !G.indoor, label:'すわる', act: async () => { P.dismountBike(true); P.pos.x = x; P.pos.z = z; P.yaw = ry; P.sitting = true; P.seatDrop = h - 0.39; } });
-  for (const s of W.shells) I.push({ x:s.x, z:s.z, r:1.4, when: () => !S().shells.includes(s.id), label:'貝がらを拾う', act: async () => { S().shells.push(s.id); G.observe && G.observe('shell', s.x, s.z); s.mesh.visible = false; audio.pickup(); toast(`貝がらを拾った（${S().shells.length} / ${W.shells.length}）`); log('浜で貝がらを拾った。'); } });
-  for (const c of W.cats) I.push({ x:c.x, z:c.z, r:1.9, when: () => !G.indoor, label:'ねこをなでる', act: async () => { G.observe && G.observe('cat', c.x, c.z); audio.tone(700, 0.25, { vol:0.08, slide:1.5 }); audio.tone(900, 0.3, { vol:0.06, slide:0.7, when:0.22 }); await say('', S().today.cat ? 'ねこは目を細めてじっとしている。' : 'ねこは一度だけ「にゃ」と鳴いて、また海のほうを向いた。'); if (!S().today.cat){ S().today.cat = true; log('塀の上のねこをなでた。'); } } });
+    I.push({ x, y:heightAt(x, z) + h, z, r:1.3, when: () => !P.sitting && !G.indoor, label:'すわる', act: async () => { P.dismountBike(true); P.pos.x = x; P.pos.z = z; P.yaw = ry; P.sitting = true; P.seatDrop = h - 0.39; } });
+  for (const s of W.shells) I.push({ x:s.x, y:(s.mesh ? s.mesh.position.y : heightAt(s.x, s.z)) + 0.1, z:s.z, r:1.4, when: () => !S().shells.includes(s.id), label:'貝がらを拾う', act: async () => { S().shells.push(s.id); G.observe && G.observe('shell', s.x, s.z); s.mesh.visible = false; audio.pickup(); toast(`貝がらを拾った（${S().shells.length} / ${W.shells.length}）`); log('浜で貝がらを拾った。'); } });
+  for (const c of W.cats) I.push({ x:c.x, y:(c.mesh ? c.mesh.position.y : heightAt(c.x, c.z) + 1.4) + 0.2, z:c.z, r:1.9, when: () => !G.indoor, label:'ねこをなでる', act: async () => { G.observe && G.observe('cat', c.x, c.z); audio.tone(700, 0.25, { vol:0.08, slide:1.5 }); audio.tone(900, 0.3, { vol:0.06, slide:0.7, when:0.22 }); await say('', S().today.cat ? 'ねこは目を細めてじっとしている。' : 'ねこは一度だけ「にゃ」と鳴いて、また海のほうを向いた。'); if (!S().today.cat){ S().today.cat = true; log('塀の上のねこをなでた。'); } } });
   I.push({ x:HOME.x, z:HOME.z + 4.4, r:2.2, when: () => !G.indoor, label:T.HOME_ENTER, act: () => enter('home') });
   I.push({ x:HOME.x + 3.4, z:HOME.z - 2.15, r:1.0, when: () => G.indoor === 'home', label:() => S().diary.length && (S().hour < 12 || (S().day === 11 && !S().flags.finale)) ? '絵日記を見る' : T.DESK, act: async () => { const st = S();
     if (st.day === 11 && !st.flags.finale){
@@ -277,7 +277,7 @@ export function setupGame(G){
       const cork = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.05, 6), new THREE.MeshLambertMaterial({ color:0xb8925a })); cork.position.y = 0.21;
       bot.add(bm, neck, cork); bot.position.set(-388, heightAt(-388, 62.5) + 0.06, 62.5); bot.rotation.set(0.3, 0.4, 1.15); G.outdoor.add(bot);
       fx.push(() => { bot.visible = !S().flags.isletBottle; });
-      I.push({ x:-388, z:62.5, r:1.9, when: () => !G.indoor && !S().flags.isletBottle && !P.riding && !P.driving, label:'小瓶を拾う', act: async () => { const st = S();
+      I.push({ x:-388, y:bot.position.y + 0.1, z:62.5, r:1.9, when: () => !G.indoor && !S().flags.isletBottle && !P.riding && !P.driving, label:'小瓶を拾う', act: async () => { const st = S();
         st.flags.isletBottle = true; st.today.islet = true; audio.pickup(); G.snap(); await talk(T.ISLET_BOTTLE); log('沖の小島で、十年前の手紙が入ったガラスの小瓶を見つけた。'); } });
       I.push({ x:-416, z:64, r:2.3, when: () => !G.indoor && !P.riding && !P.driving, label:'石像を見る', act: async () => { const st = S();
         st.today.islet = true; await talk(T.ISLET_STATUE); if (!st.today.isletStat){ st.today.isletStat = true; log('沖の小島の石像から、海を隔てて白砂島を見わたした。'); } } }); }
