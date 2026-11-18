@@ -311,3 +311,11 @@
 - 対象選択は src/interact.js の pickInteractTarget に集約。徒歩時はスコア = 距離 + 角度差(rad) × 1.25 で向きを優先し、乗車中は従来どおり距離のみ（降車＝距離0の対象を遮らない）。範囲判定（d < r）と when() の条件は従来と等価。
 - 選択中の対象へ主人公の頭を向ける（player.js の updateHeadLook）。ヨー ±0.85・ピッチ ±0.45 rad にクランプし、指数平滑化（rate 10）。ch.update の前に clearHeadLook で前フレームのオフセットを差し戻してから後段で加算する（アニメーション補間と蓄積競合させない）。一人称・乗車・水泳・受け身・ポーズ中は向けない。
 - 対象の高さは各インタラクト対象の y（未定義なら pos.y + 1.25）を使う。対象が切り替わった瞬間だけ #prompt に pop アニメーション（ui.css）を付ける。
+
+## 島あそび4種の「ギュッとしてパッと解消」演出（2026-11-18）
+- 釣り：既存の待機時間内に予兆（ウキの小刻みな揺れ・小さい水輪・audio.fishNibble）を1〜2回入れ、本アタリの引き上げで水しぶき＋audio.fishCatch。ウキは釣り中のみ生成し finally で破棄。早押しの硬直は 1300ms→450ms、時間切れは toast で即復帰。
+- セミ取り：未探索の木への近接度 G.activities.cicadaProx() で蝉の環境音（音量・うねり・中心周波数）が連続変化し、木の近くでは葉の気配の微粒子が出る。捕獲条件（quiet 判定・網補正・確率式）は不変。
+- 水切り：構え（pose 'craft'）＋ゲージ中央接近時の予兆音 audio.skipCue と水面の水輪。跳ねるごとに水輪と段階的に上がる水音 audio.skipBounce。失敗時（acc<0.35 かつ新記録でない）は toast で即復帰（st.skip と skipLog の記録は維持）。
+- カニさがし：ゲージ中は audio.crabScuttle と周辺物の微揺れ（finally で角度復元）、成功時は水輪＋砂煙。
+- 友達の反応は G.observe に集約：呼び出しは会話（say/withFriend）が閉じた後にし、クールダウンは5秒。kindReact/npcCool は発話が実際に成立した時点でだけ記録し、同行者（G.companion）を最優先に選ぶ。OBSERVE には fish/skip/bug を追加。カニの observe は従来の30m範囲（PERSONA 持ち含む）を維持すること。
+- 水輪エフェクトは activities.js の ripple（THREE.LineLoop、三角形0、寿命で dispose）。

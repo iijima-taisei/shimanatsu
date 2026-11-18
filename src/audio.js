@@ -32,7 +32,7 @@ export const audio = {
     // 昼の蝉（ジー…という持続音＋ミンミンのうねり）
     { const n = noise(), f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 5200; f.Q.value = 7; const am = ctx.createGain(); am.gain.value = 0.5; const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 86; const og = ctx.createGain(); og.gain.value = 0.5; o.connect(og); og.connect(am.gain); o.start();
       const slow = ctx.createOscillator(); slow.frequency.value = 0.9; const sg = ctx.createGain(); sg.gain.value = 0.35; const g2 = ctx.createGain(); g2.gain.value = 0.6; slow.connect(sg); sg.connect(g2.gain); slow.start();
-      const g = ctx.createGain(); g.gain.value = 0; n.connect(f); f.connect(am); am.connect(g2); g2.connect(g); g.connect(master); L.cicada = g; }
+      const g = ctx.createGain(); g.gain.value = 0; n.connect(f); f.connect(am); am.connect(g2); g2.connect(g); g.connect(master); L.cicada = g; L.cicadaF = f; L.cicadaSlow = slow; }
     // 夜の虫
     { const o = ctx.createOscillator(); o.frequency.value = 4300; const am = ctx.createGain(); am.gain.value = 0; const tr = ctx.createOscillator(); tr.type = 'square'; tr.frequency.value = 28; const tg = ctx.createGain(); tg.gain.value = 0.5; tr.connect(tg); tg.connect(am.gain); tr.start();
       const slow = ctx.createOscillator(); slow.type = 'square'; slow.frequency.value = 0.7; const g2 = ctx.createGain(); g2.gain.value = 0.5; const sg = ctx.createGain(); sg.gain.value = 0.5; slow.connect(sg); sg.connect(g2.gain); slow.start();
@@ -64,6 +64,15 @@ export const audio = {
   select(){ this.tone(660, 0.09, { type:'triangle', vol:0.12 }); this.tone(990, 0.12, { type:'triangle', vol:0.1, when:0.07 }); },
   shutter(){ this.burst(0.05, 3000, 0.25, { type:'highpass' }); this.burst(0.08, 2000, 0.2, { type:'highpass', when:0.09 }); },
   pickup(){ [1320, 1760, 2640].forEach((f, i) => this.tone(f, 0.25, { vol:0.09, when:i*0.07 })); },
+  // 釣りの予兆（微かな水音）と引き上げ成功音
+  fishNibble(){ if (!ctx) return; this.burst(0.045, 1400 + Math.random()*300, 0.045, { type:'bandpass' }); this.tone(320 + Math.random()*50, 0.06, { vol:0.032, slide:0.72 }); },
+  fishCatch(){ if (!ctx) return; this.burst(0.28, 750, 0.22); this.burst(0.36, 2200, 0.12, { type:'highpass', when:0.03 }); this.tone(240, 0.14, { type:'triangle', vol:0.12, slide:1.85 }); [1046.5, 1318.5, 1568].forEach((f, i) => this.tone(f, 0.24, { vol:0.085, when:0.05 + i*0.06 })); },
+  // セミ捕獲・水切り・カニさがしの音
+  bugCatch(){ if (!ctx) return; [987.77, 1318.5, 1661.2, 1975.5].forEach((f, i) => this.tone(f, 0.2, { type:'triangle', vol:0.08, when:i*0.055 })); },
+  skipCue(){ if (!ctx) return; this.tone(980, 0.05, { type:'triangle', vol:0.045, slide:1.12 }); },
+  skipBounce(i){ if (!ctx) return; const f = 760*Math.pow(1.075, i); this.tone(f, 0.075, { vol:0.09, slide:1.22 }); this.tone(f*1.5, 0.055, { type:'triangle', vol:0.045, when:0.01 }); this.burst(0.05, Math.min(5500, 2200 + i*220), 0.055, { type:'highpass' }); },
+  crabScuttle(near=0.5){ if (!ctx) return; const v = 0.028 + near*0.026; this.burst(0.022, 3200 + Math.random()*800, v, { type:'bandpass' }); this.burst(0.022, 4000 + Math.random()*900, v*0.85, { type:'bandpass', when:0.045 }); },
+  crabCatch(){ if (!ctx) return; [880, 1174.7, 1480, 1760].forEach((f, i) => this.tone(f, 0.22, { vol:0.085, when:i*0.055 })); },
   furin(){ const f = 2300 + Math.random()*500; this.tone(f, 1.6, { vol:0.07 }); this.tone(f*2.76, 0.9, { vol:0.025 }); },
   chime(){ const E=659.25, C=523.25, D=587.33, G=392.0; [[E,C,D,G],[C,D,E,C],[E,C,D,G],[G,D,E,C]].forEach((p, i) => p.forEach((f, j) => { const w = i*3.4 + j*0.7; this.tone(f, 1.9, { vol:0.11, when:w, echo:true, attack:0.005 }); this.tone(f*2, 1.2, { vol:0.03, when:w, echo:true }); })); },
   higurashi(){ const base = 3700 + Math.random()*300; for (let i=0;i<14;i++){ const w = i*(0.17 - i*0.004); this.tone(base*(1 - i*0.012), 0.13, { vol:0.045*(1 - i/18), when:w, echo:true }); } },
@@ -101,7 +110,10 @@ export const audio = {
       L.rain = mk('highpass', 1100, 0.5); L.gale = mk('bandpass', 380, 0.8); }
     gainTo(L.rain, v*0.16, 0.6); gainTo(L.gale, wind*0.12*(0.7 + 0.3*Math.sin(ctx.currentTime*0.9)), 0.4); },
   update(s){ if (!ctx) return; const t = ctx.currentTime; const day = s.hour > 6.5 && s.hour < 17.6, eve = s.hour >= 16.6 && s.hour < 19.2, night = s.hour >= 19 || s.hour < 5;
-    gainTo(L.wave, s.indoor ? 0.03 : Math.max(0.025, 0.42*s.coast)); gainTo(L.cicada, (day ? 0.05 : 0) * (s.indoor ? 0.45 : 1) * (1 - s.coast*0.7) * (s.quiet ? 0.3 : 1));
+    const prox = Math.max(0, Math.min(1, s.cicadaProx || 0)), cicadaBase = day ? 0.05 : (prox > 0 && s.hour > 6.5 && s.hour < 19 ? 0.032 : 0);
+    gainTo(L.wave, s.indoor ? 0.03 : Math.max(0.025, 0.42*s.coast)); gainTo(L.cicada, cicadaBase * (s.indoor ? 0.45 : 1) * (1 - s.coast*0.7) * (s.quiet ? 0.3 : 1) * (1 + prox*0.95));
+    if (L.cicadaSlow) L.cicadaSlow.frequency.setTargetAtTime(0.9 + prox*0.85, t, 0.15);
+    if (L.cicadaF) L.cicadaF.frequency.setTargetAtTime(5200 + prox*550, t, 0.15);
     gainTo(L.cricket, night && !s.indoor ? 0.012 : 0); gainTo(L.wind, s.indoor ? 0 : 0.02 + s.high*0.06);
     if (eve && !s.quiet && t > this.nextHigu){ this.higurashi(); this.nextHigu = t + 3 + Math.random()*6; }
     if (s.hour > 5.8 && s.hour < 9.2 && !s.quiet && !s.indoor && t > (this.nextBird || 0)){ this.bird(s.coast > 0.55); this.nextBird = t + 5 + Math.random()*8; }
