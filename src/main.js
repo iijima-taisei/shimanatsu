@@ -7,7 +7,7 @@ import { buildWorld, AREAS, HOME } from './world/places.js';
 import { NPC } from './npc.js';
 import { setupGame, newState, loadSave, Fireworks } from './events.js';
 import { dlg, setTick } from './dialogue.js';
-import { audio } from './audio.js';
+import { audio, computeShadeFactor } from './audio.js';
 import { setupActivities } from './activities.js';
 import { setupCars } from './car.js';
 import { setupMap } from './map.js';
@@ -192,8 +192,15 @@ function tick(dt){
   if (player.riding || player.driving || player.air > 0) lastMoved = player.moved;   // 乗り物の上と空中では足音を出さない
   else if (player.moved - lastMoved > (player.swimming ? 1.5 : player.running ? 1.7 : 0.85)){ lastMoved = player.moved; audio.step(player.swimming, player.swimming ? 'shallow' : player.surface(), !!player.room); }
   const gh = heightAt(player.pos.x, player.pos.z);
+  const sh = computeShadeFactor({
+    x: player.pos.x, z: player.pos.z, sunDir: sky.sunDir, hour: S.hour,
+    cloud: G.weatherNow ? G.weatherNow.cloud : 0, rain: G.weatherNow ? G.weatherNow.rain : 0,
+    indoor: !!(G.indoor || G.inSchool), swimming: !!player.swimming,
+    trees: W.allTrees, buildings: W.shadeBuildings,
+  });
   audio.update({ day:S.day, hour:S.hour, coast:Math.max(0, Math.min(1, 1 - gh/7)), high:Math.min(1, Math.max(0, gh/40)), indoor:G.indoor || G.inSchool, quiet:G.weatherNow.rain > 0.15, bgm:G.bgm || ((S.hour > 17.4 && S.hour < 19.4 && !G.lock) ? 1 : 0),
     cicadaProx: G.activities.cicadaProx ? G.activities.cicadaProx() : 0,
+    shade: sh.shade, treeShade: sh.treeShade,
     wind: G.weatherNow ? G.weatherNow.wind : 0, weatherKind: G.weatherNow ? G.weatherNow.kind : 'clear',
     furin: G.indoor === 'home' || (!G.indoor && !G.inSchool && (Math.hypot(player.pos.x - HOME.x, player.pos.z - HOME.z) < 16 || Math.hypot(player.pos.x + 84, player.pos.z - 66) < 14)) });
   G.activities.update(dt); G.fxUpdate(dt); G.funUpdate(dt); G.itemsUpdate(dt); map.update(dt);

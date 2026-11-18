@@ -41,7 +41,8 @@ function rng(seed){ return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let 
 const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), S = new THREE.Vector3(), UP = new THREE.Vector3(0,1,0);
 
 export function buildWorld(G){
-  const { scene, colliders } = G; const W = { bob:[], shells:[], bikes:[], cars:[], decos:{} };
+  const { scene, colliders } = G; const W = { bob:[], shells:[], bikes:[], cars:[], decos:{}, shadeBuildings:[] };
+  const addShade = (x, z, w, d, ry=0, h=4.5) => W.shadeBuildings.push({ x, z, w, d, cs:Math.cos(ry), sn:Math.sin(ry), h });
   // 吹っ飛ばせる外の小物（physics.js が W.knock を見て登録する）。数字は重さ
   const KNOCK = { bench:1.5, vending:4, postbox:2, noticeboard:1.5, gomi:2, fishrack:1.5, mirror:0.8, stopsign:0.8, laundry:1, surfboard:0.6, windsock:1, busstop:3, planter:0.8 }; W.knock = [];
   const footMat = new THREE.MeshLambertMaterial({ map:tex('concrete'), color:0xbdbab0 });   // 建物の土台（坂で浮かないように）
@@ -77,7 +78,9 @@ export function buildWorld(G){
   const sch = model('school'); sch.position.set(SCHOOL.x, 9, SCHOOL.z); W.school.add(sch);
   // 校舎の当たり判定は、中の壁ごとに school.js が作る（自転車のまま昇降口から入れるように）。北に出っぱった階段塔だけここで
   colliders.push({ x:15, z:-67.2, w:7, d:1.2 });
+  addShade(30, -62, 44, 9, 0, 11);
   put('gym', 66, -46, 0, { y:9, box:[18,26] });
+  addShade(66, -46, 18, 26, 0, 9);
   // 地面に敷く土の面。平らな板ではなく、細かく割って地形の高さに沿わせる（坂や区画の端で浮いたり、足が隠れたりしないように）
   const patchMat = new THREE.MeshLambertMaterial({ map: tex('dirt'), vertexColors:true, polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1 });
   const patches = { v:[], u:[], c:[], i:[] };
@@ -133,6 +136,7 @@ export function buildWorld(G){
   const walls = [], hedges = [], planters = [], hib = [], gardenTrees = [], byType = {}, yards = []; let trucks = 0;
   for (const l of lots){ const D = DEPTH[l.type], Wd = WIDTH[l.type], fx = Math.sin(l.ry), fz = Math.cos(l.ry), tx = fz, tz = -fx; const at = (a, b) => [l.x + fx*a + tx*b, l.z + fz*a + tz*b];
     colliders.push({ x:l.x, z:l.z, w:Wd, d:D, rot:l.ry });
+    addShade(l.x, l.z, Wd, D, l.ry, l.type === 'shed' ? 3.2 : 4.6);
     if (l.type === 'shop'){ W.shop = put('shop', l.x, l.z, l.ry); continue; }
     if (l.home) W.homeHouse = put('house', l.x, l.z, l.ry);
     else (byType[l.type] = byType[l.type] || []).push({ x:l.x, z:l.z, ry:l.ry, s:1 });
@@ -261,6 +265,7 @@ export function buildWorld(G){
   put('torii', -84, -24, 0);
   for (const x of [-85.9, -82.1]) colliders.push({ x, z:-24, r:0.2 }, { x, z:-24, r:0.3, h:0.3 });   // 鳥居の柱と亀腹
   put('shrine', -84, -54, 0, { y:15, box:[4.6, 4.6] });
+  addShade(-84, -54, 4.6, 4.6, 0, 4.5);
   colliders.push({ x:-84, z:-52.31, w:2.2, d:3.38, h:0.3 }, { x:-84, z:-52.485, w:2.2, d:3.03, h:0.6 }, { x:-84, z:-52.66, w:2.2, d:2.68, h:0.9 });   // 神社の石段（北端を社殿内まで延ばし、落下時に手前へ押し出す）
   put('onsen', -182, 30, -Math.PI/2, { y:2.2 }); PLATFORMS.push({ x:-182, z:30, r:7.4, top:2.62 });
   // 石柱の湯の縁（10角形・ジャンプで越えられる）と7本の石柱の当たり判定
@@ -286,6 +291,7 @@ export function buildWorld(G){
     const run = new THREE.Mesh(new THREE.PlaneGeometry(A.w - 8, 9).rotateX(-Math.PI/2), new THREE.MeshLambertMaterial({ map:rt, ...po })); run.position.set(A.x, A.h + 0.1, A.rz); scene.add(run);
     const apron = new THREE.Mesh(new THREE.PlaneGeometry(52, 10).rotateX(-Math.PI/2), new THREE.MeshLambertMaterial({ map:tex('concrete'), ...po })); apron.position.set(14, A.h + 0.09, 105.5); scene.add(apron);
     const term = put('terminal', 16, 96, 0, { y:A.h, box:[18, 8] }); term.traverse(o => { if (o.isMesh && o.material.name === 'airport-sign'){ o.material = o.material.clone(); o.material.map = textTex('白砂空港', { w:512, h:64, font:'bold 48px "Zen Maru Gothic", sans-serif', fg:'#ffffff', bg:'#2f6fb5' }); o.material.color.set(0xffffff); } });
+    addShade(16, 96, 18, 8, 0, 5.0);
     colliders.push({ x:16, z:96, w:19, d:9, h:0.15 }, { x:13.8, z:102.1, r:0.12 }, { x:18.2, z:102.1, r:0.12 });   // ターミナル基壇と入口ひさしの柱
     W.plane = put('plane', 34, 106.5, 1.25, { y:A.h + 0.1, box:[3, 13] }); W.planeHome = { x:34, y:A.h + 0.1, z:106.5, ry:1.25 }; put('windsock', -52, 106, 0, { y:A.h }); put('windsock', 90, 124, 0, { y:A.h });
     put('bench', -1.5, 102, Math.PI/2, { y:A.h }); put('vending', 3.5, 99.4, 0, { y:A.h, box:[1.1, 0.9] }); putCar(-12, 100, 0.3); put('statue', -12, 94, 1.0, { r:0.8 }); }
@@ -327,7 +333,7 @@ export function buildWorld(G){
         im.computeBoundingSphere(); grp.add(im); });
       for (const t of list){ cx += t.x; cz += t.z; } grp.userData.c = [cx/list.length, cz/list.length]; scene.add(grp); W.grassCells.push(grp); }
     W.grass = grass.length; }
-  W.allTrees = [...trees['tree-round'], ...trees['tree-pine'], ...trees['tree-palm']];   // 地図に描く用
+  W.allTrees = [...trees['tree-round'], ...trees['tree-pine'], ...trees['tree-palm'], { x:44, z:-16, s:1.5 }];   // 地図に描く用・木陰判定用
   W.trees = trees['tree-round'].filter(t => t.s >= 0.8).sort((a, b) => Math.hypot(a.x + 40, a.z - 20) - Math.hypot(b.x + 40, b.z - 20)).slice(0, 12);
   // 電柱と電線：幹線と路地に沿って約30mおき
   const poles = [], wire = [];

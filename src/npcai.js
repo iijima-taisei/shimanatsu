@@ -71,7 +71,8 @@ export function setupNpcAI(G){
     star:() => '夜空を流れ星が流れた', crab:() => '主人公が磯でカニをつかまえた',
     fish:o => `主人公が港で${o.fish || '魚'}を釣り上げた`, skip:o => `主人公が浜で水切りを${o.n || '何'}回も決めた`,
     bug:o => `主人公が木で${o.bug || 'セミ'}をつかまえた`,
-    photo:() => '主人公がこちらにカメラを向けてシャッターを切った' };
+    photo:() => '主人公がこちらにカメラを向けてシャッターを切った',
+    rainbow:() => '雨上がりの空に、うっすらと虹が出ている' };
   const FRIENDS = new Set(['nagisa', 'kouta', 'kotoha']);
   const mem = {}, kindCool = {}, kindReact = {}, npcCool = {}; let tObs = 3;
   const sees = (id, x, z) => { const n = G.npcs[id]; if (!n || !n.root.visible || !PERSONA[id] || n.knock || n.ride) return false; const s = n.spot || {};
@@ -98,12 +99,18 @@ export function setupNpcAI(G){
   const fill = (t, o) => t.replace(/\{who\}/g, o.who || '');
   // 見たことへのひとことを言う（AIが動いていればAI、だめなら控えの文）
   const comment = (id, e) => { e.done = true;
+    if (e.kind === 'rainbow' && !((G.weatherNow && G.weatherNow.rainbow) > 0.1)) return;
     if (e.o && e.o.cooldown && kindReact[e.kind] !== undefined && G.time - kindReact[e.kind] < e.o.cooldown) return;
     const trySpeak = text => {
       const n = G.npcs[id];
       if (!text || !n || !n.root.visible || n.chatPeer || G.speaking(id)) return false;
       if (e.o && e.o.cooldown && kindReact[e.kind] !== undefined && G.time - kindReact[e.kind] < e.o.cooldown) return false;
       G.speak(id, text);
+      if (e.kind === 'rainbow'){
+        n.lookUpT = 2.6;
+        const rp = G.weatherNow && G.weatherNow.rainbowPos;
+        n.lookUpYaw = rp ? Math.atan2(rp.x - n.pos.x, rp.z - n.pos.z) : null;
+      }
       if (e.o && e.o.cooldown) kindReact[e.kind] = G.time;
       npcCool[id] = G.time;
       return true;
@@ -113,9 +120,11 @@ export function setupNpcAI(G){
     const desc = DESC[e.kind] ? DESC[e.kind](e.o) : e.kind;
     llmAsk(`次の人物になりきって答えてください。\n人物：${PERSONA[id]}\nいまの状況：\n${situation(id)}\nいま、目の前で見たこと：${desc}。\nそれを見て、この人物が思わず口にするひとこと（ひとりごとか、主人公への声かけ）を1つ。セリフだけを書き、40文字以内。見出しや説明は書かない。`, { priority:true, maxTokens:44, temperature:0.75 })
       .then(t => { asking['obs' + id] = false; const l = clean(t, id); if (l) trySpeak(l); else fb(); }); };
-  // まわりのようすの変化も、見たこととして拾う（雨・飛行機・泳ぎ）
-  let wasRain = false, wasDep = null, wasSwim = false;
+  // まわりのようすの変化も、見たこととして拾う（雨・虹・飛行機・泳ぎ）
+  let wasRain = false, wasDep = null, wasSwim = false, nextRainbowTry = 0;
   const watch = () => { const r = (G.weatherNow && G.weatherNow.rain) || 0; if (!wasRain && r > 0.15){ wasRain = true; G.observe('rain', null, null); } else if (wasRain && r < 0.05){ wasRain = false; G.observe('stop', null, null); }
+    const rb = (G.weatherNow && G.weatherNow.rainbow) || 0;
+    if (rb > 0.25 && G.time >= nextRainbowTry){ nextRainbowTry = G.time + 0.5; G.observe('rainbow', P.pos.x, P.pos.z, { friendsOnly:true, maxDist:26, cooldown:120, soon:true }); }
     if (G.departing && !wasDep) G.observe('plane', null, null); wasDep = G.departing;
     if (P.swimming && !wasSwim) G.observe('swim', P.pos.x, P.pos.z); wasSwim = P.swimming; };
   // ---- NPC同士の吹き出し掛け合い（ランタイム状態のみ・保存しない） ----

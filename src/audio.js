@@ -3,6 +3,67 @@ let ctx = null, master, noiseBuf; const L = {};
 function noise(){ const b = ctx.createBufferSource(); b.buffer = noiseBuf; b.loop = true; b.start(); return b; }
 function gainTo(g, v, t=0.8){ g.gain.setTargetAtTime(v, ctx.currentTime, t); }
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const smooth01 = (a, b, x) => { const t = clamp((x - a)/(b - a), 0, 1); return t*t*(3 - 2*t); };
+// 晴れた日中の、大きな木々や建物の日陰エリア判定（0〜1の涼気度）
+export function computeShadeFactor({ x, z, sunDir, hour = 12, cloud = 0, rain = 0, indoor = false, swimming = false, trees = [], buildings = [] } = {}){
+  if (indoor || swimming || hour <= 6.5 || hour >= 18.0 || rain > 0.12 || cloud >= 0.45){
+    return { shade:0, treeShade:0, bldShade:0 };
+  }
+  const sunK = clamp(1 - cloud*2.2, 0, 1);
+  const dayK = smooth01(6.5, 7.5, hour)*(1 - smooth01(17.2, 18.0, hour));
+  const sx = sunDir ? sunDir.x : 0.4, sz = sunDir ? sunDir.z : 0.3, sy = Math.max(0.25, sunDir ? sunDir.y : 0.7);
+  const hLen = Math.hypot(sx, sz);
+  const ux = hLen > 0.01 ? -sx/hLen : 0, uz = hLen > 0.01 ? -sz/hLen : -1;
+  const tanApprox = Math.min(1.6, hLen/sy);
+  let treeShade = 0;
+  for (const t of trees || []){
+    const s = t.s ?? 1;
+    if (s < 0.72) continue;
+    if (Math.abs(x - t.x) > 10 || Math.abs(z - t.z) > 10) continue;
+    const len = Math.min(4.2, 4.8*s*tanApprox*0.65);
+    const proj = len > 0.01 ? clamp(((x - t.x)*ux + (z - t.z)*uz)/len, 0, 1) : 0;
+    const cx = t.x + ux*len*proj, cz = t.z + uz*len*proj;
+    const d = Math.hypot(x - cx, z - cz), r = 2.6*s;
+    if (d < r + 1.2){
+      const k = clamp((r + 1.2 - d)/1.4, 0, 1);
+      if (k > treeShade) treeShade = k;
+    }
+  }
+  let bldShade = 0;
+  for (const b of buildings || []){
+    if (Math.abs(x - b.x) > 35 || Math.abs(z - b.z) > 35) continue;
+    const hw = b.w*0.5, hd = b.d*0.5, bLen = Math.min(5.5, (b.h || 4.5)*tanApprox*0.72);
+    let minOut = 99;
+    for (const f of [0, 0.35, 0.7, 1.0]){
+      const dx = (x - ux*bLen*f) - b.x, dz = (z - uz*bLen*f) - b.z;
+      const lx = dx*b.cs - dz*b.sn, lz = dx*b.sn + dz*b.cs;
+      const out = Math.hypot(Math.max(0, Math.abs(lx) - hw), Math.max(0, Math.abs(lz) - hd));
+      if (out < minOut) minOut = out;
+    }
+    if (minOut < 1.2){
+      const k = clamp((1.2 - minOut)/1.2, 0, 1);
+      if (k > bldShade) bldShade = k;
+    }
+  }
+  const ts = clamp(treeShade*sunK*dayK, 0, 1), bs = clamp(bldShade*sunK*dayK, 0, 1);
+  return { shade:Math.max(ts, bs), treeShade:ts, bldShade:bs };
+}
+// 日向・日陰に応じた蝉・風・葉擦れの環境音バランスを計算する
+export function computeAmbienceBalance(s = {}){
+  const hour = s.hour ?? 12, coast = s.coast || 0, high = s.high || 0;
+  const day = hour > 6.5 && hour < 17.6;
+  const prox = clamp(s.cicadaProx || 0, 0, 1);
+  const shade = clamp(s.shade || 0, 0, 1);
+  const treeShade = clamp(s.treeShade || 0, 0, 1);
+  const cicadaBase = day ? 0.05 : (prox > 0 && hour > 6.5 && hour < 19 ? 0.032 : 0);
+  const cicadaGain = cicadaBase*(s.indoor ? 0.45 : 1)*(1 - coast*0.7)*(s.quiet ? 0.3 : 1)*(1 + prox*0.95)*(1 - shade*0.18);
+  const cicadaFreq = 5200 + prox*550 - shade*650;
+  const cicadaQ = 7 - shade*1.8;
+  const cicadaSlow = 0.9 + prox*0.85;
+  const windGain = s.indoor ? 0 : 0.02 + high*0.06 + shade*0.015;
+  const rustleGain = (s.indoor || s.quiet) ? 0 : shade*(0.008 + treeShade*0.008);
+  return { cicadaGain, cicadaFreq, cicadaQ, cicadaSlow, windGain, rustleGain };
+}
 // 風鈴の発音可否と次回間隔・音量を決める（台風時は鳴りすぎないよう停止する）
 export function computeFurinSchedule(wind = 0, kind = 'clear', indoor = false){
   if (kind === 'typhoon' || wind >= 0.7) return { allow:false, minWait:0, maxWait:0, vol:0 };
@@ -115,6 +176,11 @@ export const audio = {
       const g = ctx.createGain(); g.gain.value = 0; o.connect(am); am.connect(g2); g2.connect(g); g.connect(master); o.start(); L.cricket = g; }
     // 風
     { const n = noise(), f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 300; f.Q.value = 0.6; const g = ctx.createGain(); g.gain.value = 0; n.connect(f); f.connect(g); g.connect(master); L.wind = g; }
+    // 葉擦れ（日陰の涼気用：柔らかな高域ノイズ＋ゆるやかな揺らぎ）
+    { const n = noise(), f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2100; f.Q.value = 1.0;
+      const lfo = ctx.createOscillator(); lfo.frequency.value = 0.38; const lg = ctx.createGain(); lg.gain.value = 0.35;
+      const am = ctx.createGain(); am.gain.value = 0.65; lfo.connect(lg); lg.connect(am.gain); lfo.start();
+      const g = ctx.createGain(); g.gain.value = 0; n.connect(f); f.connect(am); am.connect(g); g.connect(master); L.rustle = g; }
     this.nextHigu = 0; this.nextBgm = 0; this.nextChime = 0; this.bgmI = 0;
   },
   tone(freq, dur, { type='sine', vol=0.2, attack=0.01, when=0, echo=false, slide=0 }={}){ if (!ctx) return; const t = ctx.currentTime + when; const o = ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(freq, t); if (slide) o.frequency.exponentialRampToValueAtTime(freq*slide, t+dur);
@@ -282,12 +348,15 @@ export const audio = {
   rain(v, wind=0){ if (!ctx) return; if (!L.rain){ const mk = (type, f, q) => { const n = noise(), fl = ctx.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q; const g = ctx.createGain(); g.gain.value = 0; n.connect(fl); fl.connect(g); g.connect(master); return g; };
       L.rain = mk('highpass', 1100, 0.5); L.gale = mk('bandpass', 380, 0.8); }
     gainTo(L.rain, v*0.16, 0.6); gainTo(L.gale, wind*0.12*(0.7 + 0.3*Math.sin(ctx.currentTime*0.9)), 0.4); },
-  update(s){ if (!ctx) return; const t = ctx.currentTime; const day = s.hour > 6.5 && s.hour < 17.6, eve = s.hour >= 16.6 && s.hour < 19.2, night = s.hour >= 19 || s.hour < 5;
-    const prox = Math.max(0, Math.min(1, s.cicadaProx || 0)), cicadaBase = day ? 0.05 : (prox > 0 && s.hour > 6.5 && s.hour < 19 ? 0.032 : 0);
-    gainTo(L.wave, s.indoor ? 0.03 : Math.max(0.025, 0.42*s.coast)); gainTo(L.cicada, cicadaBase * (s.indoor ? 0.45 : 1) * (1 - s.coast*0.7) * (s.quiet ? 0.3 : 1) * (1 + prox*0.95));
-    if (L.cicadaSlow) L.cicadaSlow.frequency.setTargetAtTime(0.9 + prox*0.85, t, 0.15);
-    if (L.cicadaF) L.cicadaF.frequency.setTargetAtTime(5200 + prox*550, t, 0.15);
-    gainTo(L.cricket, night && !s.indoor ? 0.012 : 0); gainTo(L.wind, s.indoor ? 0 : 0.02 + s.high*0.06);
+  update(s){ if (!ctx) return; const t = ctx.currentTime; const eve = s.hour >= 16.6 && s.hour < 19.2, night = s.hour >= 19 || s.hour < 5;
+    const amb = computeAmbienceBalance(s);
+    gainTo(L.wave, s.indoor ? 0.03 : Math.max(0.025, 0.42*s.coast));
+    gainTo(L.cicada, amb.cicadaGain);
+    if (L.cicadaSlow) L.cicadaSlow.frequency.setTargetAtTime(amb.cicadaSlow, t, 0.15);
+    if (L.cicadaF){ L.cicadaF.frequency.setTargetAtTime(amb.cicadaFreq, t, 0.25); L.cicadaF.Q.setTargetAtTime(amb.cicadaQ, t, 0.25); }
+    gainTo(L.cricket, night && !s.indoor ? 0.012 : 0);
+    gainTo(L.wind, amb.windGain);
+    if (L.rustle) gainTo(L.rustle, amb.rustleGain, 0.6);
     if (eve && !s.quiet && t > this.nextHigu){ this.higurashi(); this.nextHigu = t + 3 + Math.random()*6; }
     if (s.hour > 5.8 && s.hour < 9.2 && !s.quiet && !s.indoor && t > (this.nextBird || 0)){ this.bird(s.coast > 0.55); this.nextBird = t + 5 + Math.random()*8; }
     if ((s.day || 0) >= 6 && s.hour > 13 && s.hour < 16.8 && !s.quiet && s.coast < 0.6 && t > (this.nextTsuku || 0)){ this.tsuku(); this.nextTsuku = t + 9 + Math.random()*12; }

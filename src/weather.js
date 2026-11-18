@@ -2,6 +2,7 @@
 // 雨粒は線の板で描き、空・光・霧を曇らせ、雷は光と音、台風は風で主人公を押し、波を高くする。
 import * as THREE from 'three';
 import { audio } from './audio.js';
+import { tex } from './assets.js';
 export const TYPHOON_DAY = 8;          // 8月21日
 // 日ごとの天気 [始まる時刻, 終わる時刻, 種類]
 const PLAN = { 2:[[13, 16, 'light']], 5:[[16, 19.5, 'storm']], 7:[[15, 24, 'gust']], [TYPHOON_DAY]:[[0, 24, 'typhoon']], 10:[[6, 10, 'light']] };
@@ -9,6 +10,42 @@ const PLAN = { 2:[[13, 16, 'light']], 5:[[16, 19.5, 'storm']], 7:[[15, 24, 'gust
 export const KINDS = { clear:{ rain:0, storm:0, wind:0, cloud:0 }, light:{ rain:0.3, storm:0, wind:0.1, cloud:0.55 }, storm:{ rain:1, storm:1, wind:0.35, cloud:0.92 },
   gust:{ rain:0.08, storm:0, wind:0.45, cloud:0.6 }, typhoon:{ rain:0.95, storm:0.45, wind:1, cloud:0.97 } };
 export const WEATHER_NAMES = { clear:'晴れ', light:'小雨', storm:'雷雨', gust:'くもり・強い風', typhoon:'台風' };
+function smooth01(a, b, x){ const t = Math.max(0, Math.min(1, (x - a)/(b - a))); return t*t*(3 - 2*t); }
+// 雨上がり（rain > 0.12 から晴れへの遷移）後の虹の強さ（0〜1）を返す。昼〜夕方のみ、夜間・曇天・台風時は 0
+export function updateRainbowState(rs, { day, hour, rain, cloud, kind, targetKind }){
+  if (rs.day !== day || hour < rs.lastHour - 0.5 || hour - rs.lastHour > 2.5){
+    rs.day = day; rs.hadRain = false; rs.startHour = null;
+  }
+  rs.lastHour = hour;
+  if (kind === 'typhoon' || targetKind === 'typhoon'){
+    rs.startHour = null; rs.hadRain = false; return 0;
+  }
+  if (rain > 0.12){
+    rs.hadRain = true; rs.startHour = null; return 0;
+  }
+  if (rs.hadRain && targetKind === 'clear'){
+    rs.hadRain = false;
+    if (hour >= 8.0 && hour < 18.9) rs.startHour = hour;
+  }
+  if (rs.startHour == null) return 0;
+  const dur = 1.25, age = hour - rs.startHour;
+  if (age < 0 || age >= dur || hour < 8.0 || hour >= 19.0){
+    rs.startHour = null; return 0;
+  }
+  const fadeIn = smooth01(0, 0.10, age);
+  const fadeOut = 1 - smooth01(dur - 0.28, dur, age);
+  const dayFade = smooth01(8.0, 8.6, hour)*(1 - smooth01(18.4, 19.0, hour));
+  const clearK = (1 - smooth01(0.18, 0.45, cloud))*(1 - smooth01(0.03, 0.12, rain));
+  return Math.max(0, Math.min(1, fadeIn*fadeOut*dayFade*clearK));
+}
+// 太陽と反対の方角の空に虹板を置く座標を返す
+export function computeRainbowPos(center, sunDir, dist = 1480){
+  const sx = sunDir ? sunDir.x : 0.7, sz = sunDir ? sunDir.z : 0.3, sy = Math.max(0, sunDir ? sunDir.y : 0.4);
+  const h = Math.hypot(sx, sz);
+  const ax = h > 0.001 ? -sx/h : -1, az = h > 0.001 ? -sz/h : 0;
+  const yOff = 220 - sy*110;
+  return { x:center.x + ax*dist, y:center.y + yOff, z:center.z + az*dist };
+}
 function target(day, hour){ for (const [a, b, k] of PLAN[day] || []){ const ramp = Math.min(1, (hour - a)/0.4, (b - hour)/0.4); if (ramp > 0){ const w = KINDS[k], q = Math.max(0, ramp);
       const peak = k === 'typhoon' ? 0.75 + 0.25*Math.max(0, Math.min(1, (hour - 12)/2, (21 - hour)/2)) : 1;   // 台風は午後から夜がいちばん強い
       return { rain:w.rain*q*peak, storm:w.storm*q*peak, wind:w.wind*q*peak, cloud:w.cloud*Math.min(1, q*1.5), kind:k }; } }
@@ -19,7 +56,12 @@ export function setupWeather(G){
   for (let i = 0; i < N; i++){ drops[i*3] = (Math.random() - 0.5)*BOX*2; drops[i*3 + 1] = Math.random()*H; drops[i*3 + 2] = (Math.random() - 0.5)*BOX*2; }
   const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   const rain = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color:0xc8d4e0, transparent:true, opacity:0.45, depthWrite:false })); rain.frustumCulled = false; scene.add(rain);
-  const now = { rain:0, storm:0, wind:0, cloud:0, kind:'clear' }; G.weatherNow = now; G.fogBase = [90, 620];
+  // 雨上がりの淡い虹アーチ（大きな板ポリゴン1枚、太陽の反対方向の空に出す）
+  const rainbowMat = new THREE.MeshBasicMaterial({ map:tex('rainbow-alpha', { repeat:false }), transparent:true, opacity:0, depthWrite:false, depthTest:true, fog:false, side:THREE.DoubleSide });
+  const rainbow = new THREE.Mesh(new THREE.PlaneGeometry(1350, 1350), rainbowMat);
+  rainbow.renderOrder = -9.5; rainbow.frustumCulled = false; rainbow.visible = false; scene.add(rainbow);
+  const rainbowState = { day:-1, lastHour:-1, hadRain:false, startHour:null };
+  const now = { rain:0, storm:0, wind:0, cloud:0, kind:'clear', rainbow:0, rainbowPos:null }; G.weatherNow = now; G.fogBase = [90, 620];
   let thunderAt = 0, flash = 0, ownFlash = false; const flashEl = document.getElementById('flash'), gray = new THREE.Color(), grayH = new THREE.Color(), GRAY_LIGHT = new THREE.Color(0xa3abb3), GRAY_DARK = new THREE.Color(0x4e565f), GRAYH_LIGHT = new THREE.Color(0xb7bdc2), GRAYH_DARK = new THREE.Color(0x6a7178), windDir = new THREE.Vector2(-0.8, 0.6).normalize();
   G.weather = {
     // sky.update のあとに呼ぶ
@@ -27,6 +69,17 @@ export function setupWeather(G){
       for (const key of ['rain', 'storm', 'wind', 'cloud']) now[key] += (tg[key] - now[key])*k; now.kind = tg.kind;
       const inside = (G.indoor && G.indoor !== 'class') || G.inSchool, show = now.rain > 0.02 && !inside && G.mode === 'play';
       rain.visible = show;
+      const rb = updateRainbowState(rainbowState, { day:st.day, hour:st.hour, rain:now.rain, cloud:now.cloud, kind:now.kind, targetKind:tg.kind });
+      now.rainbow = rb;
+      const noSky = G.indoor === 'shop' || G.indoor === 'term';
+      rainbow.visible = rb > 0.01 && !noSky && G.mode === 'play';
+      if (rainbow.visible){
+        const rp = computeRainbowPos(P.pos, sky.sunDir);
+        rainbow.position.set(rp.x, rp.y, rp.z);
+        rainbow.lookAt(P.pos.x, rp.y, P.pos.z);
+        rainbowMat.opacity = rb*0.38;
+        now.rainbowPos = { x:rp.x, z:rp.z };
+      } else now.rainbowPos = null;
       if (show){ const cam = G.camera.position, n = Math.floor(N*Math.min(1, now.rain)), fall = 14 + now.rain*10, wx = windDir.x*now.wind*9, wz = windDir.y*now.wind*9, len = 0.35 + now.rain*0.5;
         for (let i = 0; i < n; i++){ let y = drops[i*3 + 1] - fall*dt; if (y < 0) y += H; drops[i*3 + 1] = y; drops[i*3] = ((drops[i*3] + wx*dt + BOX) % (BOX*2) + BOX*2) % (BOX*2) - BOX; drops[i*3 + 2] = ((drops[i*3 + 2] + wz*dt + BOX) % (BOX*2) + BOX*2) % (BOX*2) - BOX;
           const x = cam.x + drops[i*3], z = cam.z + drops[i*3 + 2], yy = cam.y - H*0.4 + y; pos.set([x, yy, z, x - wx*len/fall*3, yy + len, z - wz*len/fall*3], i*6); }

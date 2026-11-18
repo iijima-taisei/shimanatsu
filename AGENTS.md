@@ -342,3 +342,8 @@
 - 作業音：audio.prepStep(taskIdx, step) が PREP_SOUND の5作業別パラメータ（輪かざりの紙・ハサミ、看板のはけ・木板、紙の花、提灯の木枠・和紙、横断幕の布・木枠）で合成音を鳴らす。work() の isConfirm() ごとに、飾りの出現位置と手元へ作業別の色紙片・絵の具・木くず・布片パーティクルを出す（G.puff に n・dur・gravity の任意指定を追加、既定値は従来どおり）。
 - 仲間の反応：同じ教室にいる仲間（スケジュール滞在・同行中とも）が手順ごとに 'nod'（うなずき、models.js に追加。関節名は不変）や 'wave' で呼応し、talk.js の PREP_REACT（nagisa・kouta・kotoha の短い掛け声のみ追加）の吹き出しを出す。終了時は finally でポーズ・マテリアルを必ず復元する。
 - 完了演出：タスク完了直後に drawList を即時再描画して黒板の「やること」表（◎＋取り消し線）を更新し、3音の達成音 audio.prepDone() を同時に鳴らす。PREP_TASKS の構造・回数・カメラは不変。
+
+## 雨上がりの虹と日陰の涼気サウンド（2026-11-18）
+- 虹：weather.js の updateRainbowState が rain > 0.12 から clear への遷移（昼〜夕方 8.0〜19.0時）を検知し、約1.25時間フェード表示する（実行時のみ、保存には入れない）。虹は新テクスチャ rainbow-alpha（生成画像を輝度キーでアルファ抜き）を貼った板ポリゴン2三角形を computeRainbowPos で反太陽方向に置き、最大不透明度0.38。夜間・曇天（cloud >= 0.45）・台風時・窓のない屋内（shop / term）では出さない。sky.js の色空間は不変。
+- 友達の反応：虹の表示中は npcai の watch() が G.observe('rainbow', friendsOnly, maxDist 26, cooldown 120, soon) を発火し、発話した友達は lookUpT / lookUpYaw で虹の方角を見上げる（'lookup' ポーズ）。セリフは talk.js の OBSERVE.rainbow 追加のみ。
+- 日陰の涼気：places.js に建物矩形の W.shadeBuildings と大木（W.allTrees）を登録し、audio.js の computeShadeFactor が晴れた日中の屋外で太陽方向から大木（s >= 0.72）・建物の日陰を判定する。日陰では computeAmbienceBalance が蝉の音量・中心周波数・Qを少し抑え、風音と葉擦れ（L.rustle）をわずかに立たせる。日向では従来のバランスのまま。

@@ -74,8 +74,9 @@ export class NPC {
   update(dt, G){
     const S = G.state, P = G.player; let pose = 'idle';
     // 軽トラの荷台に乗っている（位置は car.js が毎フレーム合わせる）
-    if (G.knockMove && G.knockMove(this, dt)){ if (this.photoT){ this.photoT = 0; this.ch.photoArm = false; this.ch.photoHeadYaw = null; } return; }   // はね飛ばされている最中（knock.js）
+    if (G.knockMove && G.knockMove(this, dt)){ if (this.photoT){ this.photoT = 0; this.ch.photoArm = false; this.ch.photoHeadYaw = null; } this.lookUpT = 0; return; }   // はね飛ばされている最中（knock.js）
     if (this.photoT > 0){ this.photoT = Math.max(0, this.photoT - dt); if (this.photoT === 0){ this.ch.photoArm = false; this.ch.photoHeadYaw = null; } }
+    if (this.lookUpT > 0) this.lookUpT = Math.max(0, this.lookUpT - dt);
     if (this.ride){ this.root.visible = true; this.ch.shadow.visible = false; this.doing = ''; this.setHold(null); this.root.rotation.y = this.yaw; this.ch.set('sit'); this.ch.update(dt); return; }
     if (this.following){
       const dx = P.pos.x - this.pos.x, dz = P.pos.z - this.pos.z, d = Math.hypot(dx, dz);
@@ -85,6 +86,7 @@ export class NPC {
         if (d > 40){ this.pos.x = P.pos.x - 1.5; this.pos.z = P.pos.z - 1.5; }
         else if (d > (G.aiai === this.id ? 0.8 : 2.1)){ /* 相合傘のときは、すぐそばを歩く */ const sp = d > 6 ? 8.6 : d > 3.2 ? 4.2 : 2.6; this.pos.x += dx/d*sp*dt; this.pos.z += dz/d*sp*dt; pose = sp > 5 ? 'run' : 'walk'; const ty = Math.atan2(dx, dz); let a = ty - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*10); }
         else if (this.pose && gh >= -1){ pose = this.pose; if (d > 0.1){ let a = Math.atan2(dx, dz) - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*10); } }
+        else if (this.lookUpT > 0 && gh >= -1){ pose = 'lookup'; if (this.lookUpYaw != null){ let a = this.lookUpYaw - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*8); } }
       }
       if (gh < -1){ pose = 'swim'; this.pos.y += (-0.95 - this.pos.y)*Math.min(1, dt*10); } else this.pos.y += (gh - this.pos.y)*Math.min(1, dt*12);
       this.root.visible = true; this.ch.shadow.visible = gh >= -1;
@@ -123,6 +125,7 @@ export class NPC {
       if (peer && pose !== 'sit' && s.seat === undefined && !this.pose) yaw = Math.atan2(peer.pos.x - this.pos.x, peer.pos.z - this.pos.z);
       if (this.pose) pose = this.pose;
       const seated = pose === 'sit' || s.seat !== undefined;
+      if (this.lookUpT > 0 && !seated && !this.pose && !(this.photoT > 0)){ pose = 'lookup'; if (this.lookUpYaw != null) yaw = this.lookUpYaw; }
       if (this.photoT > 0 && !seated){ pose = 'photo'; yaw = this.photoYaw; }
       let a = yaw - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*6);
     }
