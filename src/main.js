@@ -159,7 +159,7 @@ function tick(dt){
   G.time += dt; const S = G.state;
   if (G.mode === 'title'){ $('hud').style.display = 'none';
     const a = G.time*0.03; camera.position.set(-30 + Math.sin(a)*300, 110, 10 + Math.cos(a)*420); camera.lookAt(-30, 18, 10);
-    sea.update(G.time); W.update(G.time); sky.update(18.25, tmp.set(0, 0, 0), dt, camera); for (const k in G.npcs) G.npcs[k].root.visible = false; player.root.visible = false;
+    W.update(G.time); sky.update(18.25, tmp.set(0, 0, 0), dt, camera); sea.update(G.time, sky, camera, G.weatherNow ? G.weatherNow.cloud : 0); for (const k in G.npcs) G.npcs[k].root.visible = false; player.root.visible = false;
     audio.update({ hour:18.25, coast:0.5, high:0.5, indoor:false, bgm:1 }); renderer.render(scene, camera); return;
   }
   player.root.visible = !player.driving && !player.hidden; $('hud').style.display = (G.mode === 'play' && !G.fadeBlack) ? '' : 'none';
@@ -171,7 +171,7 @@ function tick(dt){
   if (wasRiding && (!player.riding || player.frozen)){ audio.rideWind(0, false); audio.mopedEngine(0, false); }
   wasRiding = !!player.riding && !player.frozen;
   G.knockUpdate(dt); G.bikesFlyUpdate(dt); G.physicsUpdate(dt); if (G.world && G.world.moving) G.world.moving(dt); G.npcai.update(dt); G.bubbleUpdate(dt); frameDialogue(); for (const k in G.npcs) G.npcs[k].update(dt, G);
-  sea.update(G.time); W.update(G.time); sky.update(Math.min(S.hour, 23.9), player.pos, dt, camera); G.weather.update(dt, sky, player);
+  W.update(G.time); sky.update(Math.min(S.hour, 23.9), player.pos, dt, camera); G.weather.update(dt, sky, player); sea.update(G.time, sky, camera, G.weatherNow.cloud);
   { const nk = G.blackout ? 0 : Math.max(0, Math.min(1, (Math.min(S.hour, 23.9) - 17.9)/1.2 + G.weatherNow.cloud*0.35)); setNight(nk); W.setNight(nk); }
   G.fireworks.update(dt, G.time); if (G.fireworks.flash > 0){ sky.hemi.intensity += G.fireworks.flash*0.9; sky.hemi.color.lerp(G.fireworks.col, G.fireworks.flash*0.5); }
   // 調べられるもの（向き優先で選び、主人公の顔を向ける）

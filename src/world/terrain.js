@@ -182,29 +182,96 @@ export function buildSea(scene){
   const gr = grid(), dw = SX + 1, dh = SZ + 1, dep = new Uint8Array(dw*dh*4);
   for (let i = 0; i < gr.length; i++){ const v = Math.round(Math.max(0, Math.min(1, (-gr[i] + 0.35)/2.6))*255); dep[i*4] = v; dep[i*4+1] = v; dep[i*4+2] = v; dep[i*4+3] = 255; }
   const dTex = new THREE.DataTexture(dep, dw, dh, THREE.RGBAFormat); dTex.minFilter = dTex.magFilter = THREE.LinearFilter; dTex.needsUpdate = true;
-  const uni = { uTime:{ value:0 }, uRough:{ value:1 }, tDepth:{ value:dTex } };
+  const uni = {
+    uTime:{ value:0 }, uRough:{ value:1 }, tDepth:{ value:dTex },
+    uSunDir:{ value:new THREE.Vector3(0, 1, 0) }, uSunCol:{ value:new THREE.Color(0xfffaf0) },
+    uSunVis:{ value:1 }, uCloud:{ value:0 }, uCamPos:{ value:new THREE.Vector3() },
+  };
   const mat = new THREE.MeshLambertMaterial({ map:t, transparent:true, opacity:0.86 });
   mat.onBeforeCompile = s => {
     Object.assign(s.uniforms, uni);
     s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vW;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uTime; uniform float uRough; uniform sampler2D tDepth; varying vec3 vW;')
+    s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
+uniform float uTime; uniform float uRough; uniform sampler2D tDepth; varying vec3 vW;
+uniform vec3 uSunDir; uniform vec3 uSunCol; uniform float uSunVis; uniform float uCloud; uniform vec3 uCamPos;`)
       .replace('#include <map_fragment>', `#include <map_fragment>
         vec2 suv = vec2((vW.x - (${GX0.toFixed(1)})) / ${TW.toFixed(1)}, (vW.z - (${GZ0.toFixed(1)})) / ${TD.toFixed(1)});
         float sdep = (suv.x > 0.0 && suv.x < 1.0 && suv.y > 0.0 && suv.y < 1.0) ? texture2D(tDepth, suv).r : 1.0;
+        float s_foam = 0.0;
         if (sdep < 0.88){
           float shore = 1.0 - smoothstep(0.0, 0.88, sdep);
           float w1 = sin(sdep * 22.0 - uTime * (1.8 + uRough * 0.35));
           float w2 = sin(sdep * 14.0 - uTime * (1.2 + uRough * 0.25) + 2.1);
           float foam = smoothstep(0.64, 0.94, w1) * shore * 0.68 + smoothstep(0.74, 0.96, w2) * shore * 0.42;
-          foam += smoothstep(0.24, 0.02, sdep) * (0.42 + 0.18 * sin(uTime * 2.1 + vW.x * 0.14 + vW.z * 0.14));
+          foam += (1.0 - smoothstep(0.02, 0.24, sdep)) * (0.42 + 0.18 * sin(uTime * 2.1 + vW.x * 0.14 + vW.z * 0.14));
           foam = clamp(foam, 0.0, 0.9);
+          s_foam = foam;
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.95, 0.98, 1.0), foam);
           diffuseColor.a = max(diffuseColor.a, mix(0.86, 0.96, foam));
+        }`)
+      .replace('#include <envmap_fragment>', `#include <envmap_fragment>
+        /* 夜間（uSunVis=0）と雨天・曇天・台風時は太陽反射を消す */
+        float s_clear = (1.0 - smoothstep(0.12, 0.48, uCloud)) * clamp(uSunVis, 0.0, 1.0);
+        if (s_clear > 0.001){
+          vec3 s_toCam = uCamPos - vW;
+          float s_camDist = length(s_toCam);
+          vec3 s_V = s_toCam / max(s_camDist, 0.001);
+          float s_sunLen = length(uSunDir);
+          vec3 s_L = s_sunLen > 0.001 ? uSunDir / s_sunLen : vec3(0.0, 1.0, 0.0);
+          float s_near = 1.0 - smoothstep(25.0, 260.0, s_camDist);
+          float s_mid = 1.0 - smoothstep(90.0, 560.0, s_camDist);
+          float s_spd = 1.0 + (uRough - 1.0) * 0.25;
+          vec2 s_wp = vW.xz;
+          float s_p1 = s_wp.x * 0.28 + s_wp.y * 0.21 + uTime * 1.15 * s_spd;
+          float s_p2 = s_wp.x * -0.19 + s_wp.y * 0.34 - uTime * 0.92 * s_spd;
+          float s_p3 = s_wp.x * 0.78 - s_wp.y * 0.62 + uTime * 1.85 * s_spd;
+          float s_p4 = s_wp.x * 1.45 + s_wp.y * 1.15 - uTime * 2.35 * s_spd;
+          float s_p5 = s_wp.x * -1.15 + s_wp.y * 1.65 + uTime * 2.05 * s_spd;
+          vec2 s_sb = vec2(cos(s_p1) * 0.45 - cos(s_p2) * 0.35, cos(s_p1) * 0.32 + cos(s_p2) * 0.48);
+          vec2 s_sm = vec2(cos(s_p3) * 0.55, -cos(s_p3) * 0.45) * (0.35 + 0.65 * s_mid);
+          vec2 s_sf = vec2(cos(s_p4) * 0.55 - cos(s_p5) * 0.40, cos(s_p4) * 0.45 + cos(s_p5) * 0.55) * (0.15 + 0.85 * s_near);
+          vec2 s_offPath = s_sb * 0.10 + s_sm * 0.065;
+          vec2 s_offGlint = s_sb * 0.12 + s_sm * 0.16 + s_sf * 0.26;
+          vec3 s_N = normalize(vec3(s_offPath.x, 1.0, s_offPath.y));
+          vec3 s_Ng = normalize(vec3(s_offGlint.x, 1.0, s_offGlint.y));
+          vec3 s_R = reflect(-s_V, s_N);
+          vec3 s_Rg = reflect(-s_V, s_Ng);
+          float s_rdl = max(dot(s_R, s_L), 0.0);
+          float s_rdlG = max(dot(s_Rg, s_L), 0.0);
+          float s_lLen = length(s_L.xz);
+          float s_rLen = length(s_R.xz);
+          float s_azim = (s_lLen > 0.001 && s_rLen > 0.001) ? max(dot(s_R.xz / s_rLen, s_L.xz / s_lLen), 0.0) : 0.0;
+          float s_lowSun = 1.0 - smoothstep(0.10, 0.55, s_L.y);
+          float s_daySun = smoothstep(0.18, 0.65, s_L.y);
+          float s_elev = 1.0 - smoothstep(0.0, 0.55, abs(s_R.y - s_L.y));
+          float s_bandWave = 0.45 + 0.55 * smoothstep(-0.25, 0.80, sin(s_p1) * cos(s_p2));
+          float s_band = pow(max(s_azim, 0.0001), 28.0) * s_elev * s_bandWave;
+          float s_crest = 0.40 + 0.60 * smoothstep(0.15, 0.90, sin(s_p3 * 0.9 + s_p1 * 0.6));
+          float s_pathGlint = pow(max(s_rdl, 0.0001), 36.0) * s_crest + pow(max(s_rdlG, 0.0001), 24.0) * pow(max(s_azim, 0.0001), 10.0) * 0.65;
+          float s_sunPath = (s_band * 0.16 + s_pathGlint * 0.24) * s_lowSun;
+          float s_twinkle = smoothstep(0.25, 0.90, sin(s_p4 + s_p3 * 0.5)) * (0.45 + 0.55 * smoothstep(-0.20, 0.85, cos(s_p5 - s_p2 * 0.6)));
+          float s_dayGlint = (pow(max(s_rdlG, 0.0001), 14.0) * 0.28 + smoothstep(0.56, 0.88, s_rdlG) * 0.22 * s_twinkle) * s_daySun * (0.35 + 0.65 * s_mid);
+          float s_fresnel = mix(0.35, 1.0, pow(max(1.0 - clamp(s_V.y, 0.0, 1.0), 0.0001), 2.0));
+          float s_shoreMask = smoothstep(0.02, 0.16, sdep) * (1.0 - s_foam * 0.72);
+          float s_spec = (s_sunPath + s_dayGlint) * s_fresnel * s_shoreMask * s_clear;
+          outgoingLight += uSunCol * s_spec;
         }`);
   };
   const m = new THREE.Mesh(new THREE.PlaneGeometry(4000,4000,1,1).rotateX(-Math.PI/2), mat); m.position.y = 0; scene.add(m);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(4000,4000).rotateX(-Math.PI/2), new THREE.MeshBasicMaterial({color:0x1d5a7c, fog:true})); floor.position.y=-13.5; scene.add(floor);
   // 台風の日は波を高くする（window.G.seaRough）
-  return { update(time){ const r = (window.G && window.G.seaRough) || 1; uni.uTime.value = time; uni.uRough.value = r; t.offset.set(time*0.012*r, time*0.008*r); m.position.y = Math.sin(time*0.7*(0.6 + r*0.4))*0.08*r; } };
+  return {
+    update(time, sky, camera, cloud = 0){
+      const r = (window.G && window.G.seaRough) || 1;
+      uni.uTime.value = time; uni.uRough.value = r; t.offset.set(time*0.012*r, time*0.008*r); m.position.y = Math.sin(time*0.7*(0.6 + r*0.4))*0.08*r;
+      if (sky && sky.uni){
+        uni.uSunDir.value.copy(sky.uni.sunDir.value);
+        uni.uSunCol.value.copy(sky.uni.sunCol.value);
+        uni.uSunVis.value = sky.uni.sunVisible.value;
+      }
+      if (camera) uni.uCamPos.value.copy(camera.position);
+      uni.uCloud.value = cloud || 0;
+    },
+  };
 }

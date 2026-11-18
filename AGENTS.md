@@ -347,3 +347,8 @@
 - 虹：weather.js の updateRainbowState が rain > 0.12 から clear への遷移（昼〜夕方 8.0〜19.0時）を検知し、約1.25時間フェード表示する（実行時のみ、保存には入れない）。虹は新テクスチャ rainbow-alpha（生成画像を輝度キーでアルファ抜き）を貼った板ポリゴン2三角形を computeRainbowPos で反太陽方向に置き、最大不透明度0.38。夜間・曇天（cloud >= 0.45）・台風時・窓のない屋内（shop / term）では出さない。sky.js の色空間は不変。
 - 友達の反応：虹の表示中は npcai の watch() が G.observe('rainbow', friendsOnly, maxDist 26, cooldown 120, soon) を発火し、発話した友達は lookUpT / lookUpYaw で虹の方角を見上げる（'lookup' ポーズ）。セリフは talk.js の OBSERVE.rainbow 追加のみ。
 - 日陰の涼気：places.js に建物矩形の W.shadeBuildings と大木（W.allTrees）を登録し、audio.js の computeShadeFactor が晴れた日中の屋外で太陽方向から大木（s >= 0.72）・建物の日陰を判定する。日陰では computeAmbienceBalance が蝉の音量・中心周波数・Qを少し抑え、風音と葉擦れ（L.rustle）をわずかに立たせる。日向では従来のバランスのまま。
+
+## 海面の「光の道」と波間きらめき（2026-11-18）
+- terrain.js の buildSea（onBeforeCompile）に uSunDir / uSunCol / uSunVis / uCloud / uCamPos を追加し、波位相の法線と視線反射から昼の細波きらめきと朝夕の帯状ハイライト（光の道）を outgoingLight へ加算する（envmap_fragment 直後、既存の浅瀬波紋・汀線の泡は不変）。main.js の sea.update(time, sky, camera, cloud) で毎フレーム同期する。
+- 消灯条件：s_clear = (1 - smoothstep(0.12, 0.48, uCloud)) * clamp(uSunVis) で、夜間と曇天・雨天・台風時（cloud >= 0.48）は反射が消える。距離減衰で遠景の高周波を抑え、480pでもちらつかせない。
+- GLSL の smoothstep は edge0 < edge1 を厳守すること（逆転指定は未定義動作）。今回 s_lowSun と既存の foam の1箇所を 1.0 - smoothstep(...) 形式に統一した。
