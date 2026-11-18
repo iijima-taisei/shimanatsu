@@ -102,7 +102,8 @@ export function setupGame(G){
   };
   // id は部屋の名前（'class' 'home' 'shop' 'term'）。false で外に出る
   const setIndoor = id => { if (id === true) id = 'class'; if (id) P.dismountBike(true); G.indoor = id || false; W.school.visible = id !== 'class';
-    for (const k in W.interiors) W.interiors[k].visible = k === id; G.outdoor.visible = !id || id === 'class'; P.room = id ? ROOMS[id] : null; P.camDist = id ? 3.4 : 6.2; P.sitting = false; P.carry = null; };
+    if (W.homeHouse) W.homeHouse.visible = id !== 'home';
+    for (const k in W.interiors) W.interiors[k].visible = k === id; G.outdoor.visible = !id || id === 'class' || id === 'home'; P.room = id ? ROOMS[id] : null; P.camDist = id ? 3.4 : 6.2; P.sitting = false; P.carry = null; };
   const companion = () => G.companion ? G.npcs[G.companion] : null;
   const enter = async (id='class') => { const d = DOORS[id], h = S().hour; if (S().day === TYPHOON_DAY && T.STORM_CLOSED[id]){ await say('', T.STORM_CLOSED[id]); return; } if (h < d.open[0] || h >= d.open[1]){ await say('', d.closed); return; }
     await fade(true, 250); setIndoor(id); P.teleport(d.in[0], d.in[1], d.in[2]); P.camYaw = d.camYaw; const c = companion(); if (c) c.pos.set(d.in[0] + 0.9, ROOMS[id].y, d.in[1] + 0.3); audio.tone(880, 0.08, { vol:0.04 }); await fade(false, 250); };

@@ -7,10 +7,10 @@ export const SCHOOL = { x:30, z:-62 };
 export const ROOM = { id:'class', x:40, z:-60.5, y:16.5, minX:36.0, maxX:43.9, minZ:-63.3, maxZ:-57.7,
   col:[{ x:38.8, z:-61.4, w:1.9, d:1.3 }, { x:42.6, z:-59.25, w:3.0, d:2.8 }, { x:35.9, z:-61.4, w:1.2, d:3.4 }] };
 export const HOME = { x:-78, z:46.5 };
-// 入れる建物の中。部屋は建物の真上の空中に置き、中にいる間だけ見せる（窓の外は映さない）。
+// 入れる建物の中。自宅は窓から外が見えるよう地上の高さに置き、商店・待合室は建物の真上の空中に置く。
 // 座標はゲーム内の値。col は部屋の中の家具の当たり判定。walls は壁の内側までの半幅（x, z）と天井の高さ（カメラが壁を抜けないように使う）。
 const box = (cx, cz, x, z, w, d) => ({ x:cx + x, z:cz + z, w, d });
-export const HOME_IN = { id:'home', x:HOME.x, z:HOME.z, y:40, walls:[4.5, 3.3, 2.5], minX:HOME.x - 4.15, maxX:HOME.x + 4.15, minZ:HOME.z - 2.95, maxZ:HOME.z + 2.95,
+export const HOME_IN = { id:'home', x:HOME.x, z:HOME.z, y:heightAt(HOME.x, HOME.z) + 0.3, walls:[4.5, 3.3, 2.5], minX:HOME.x - 4.15, maxX:HOME.x + 4.15, minZ:HOME.z - 2.95, maxZ:HOME.z + 2.95,
   col:[box(HOME.x, HOME.z, 0.6, 2.13, 0.25, 2.4), box(HOME.x, HOME.z, 0.6, -2.13, 0.25, 2.4), { x:HOME.x - 2.2, z:HOME.z - 0.3, r:0.62 }, box(HOME.x, HOME.z, -4.1, -1.9, 0.8, 0.7),
     { x:HOME.x - 0.3, z:HOME.z - 2.6, r:0.25 }, box(HOME.x, HOME.z, 3.4, -2.75, 1.45, 0.65), box(HOME.x, HOME.z, 4.25, 0.4, 0.45, 1.25), box(HOME.x, HOME.z, -2.3, 3.05, 0.55, 0.45)] };
 export const SHOP = { x:-84, z:66 };
@@ -95,7 +95,7 @@ export function buildWorld(G){
     W.fans.push({ head:f.getObjectByName('fanHead'), blades:f.getObjectByName('fanBlades'), t:Math.random()*10, room:k }); }
   // 毎フレーム：風の時間を進め、扇風機の羽根を回して首を振る
   W.moving = dt => { WIND.value += dt;
-    if (G.player){ const p = G.player.pos; for (const g of W.grassCells){ const [x, z] = g.userData.c; g.visible = !G.indoor && Math.hypot(x - p.x, z - p.z) < 120; } } for (const f of W.fans){ if (!W.interiors[f.room].visible) continue; f.t += dt; if (f.head) f.head.rotation.y = Math.sin(f.t*0.55)*0.75; if (f.blades) f.blades.rotation.z += dt*22; } };
+    if (G.player){ const p = G.player.pos; for (const g of W.grassCells){ const [x, z] = g.userData.c; g.visible = (!G.indoor || G.indoor === 'home') && Math.hypot(x - p.x, z - p.z) < 120; } } for (const f of W.fans){ if (!W.interiors[f.room].visible) continue; f.t += dt; if (f.head) f.head.rotation.y = Math.sin(f.t*0.55)*0.75; if (f.blades) f.blades.rotation.z += dt*22; } };
   W.interiors.shop.traverse(o => { if (o.isMesh && o.material.name === 'kori-flag-ds'){ o.material = o.material.clone(); o.material.map = textTex('氷', { w:128, h:256, font:'bold 150px "Zen Maru Gothic", sans-serif', fg:'#2f6fb5', bg:'#f4f0e4' }); o.material.color.set(0xffffff); } });
   { const cv = document.createElement('canvas'); cv.width = 512; cv.height = 256; const g = cv.getContext('2d'); const draw = () => { g.fillStyle = '#2f3a48'; g.fillRect(0, 0, 512, 256); g.fillStyle = '#f4d35e'; g.font = 'bold 34px "Zen Maru Gothic", sans-serif'; g.fillText('出発　DEPARTURES', 24, 46);
       g.fillStyle = '#eef'; g.font = 'bold 30px "Zen Maru Gothic", sans-serif'; [['09:10', '調布ゆき'], ['13:25', '調布ゆき'], ['16:40', '調布ゆき']].forEach(([t, d], i) => { g.fillText(t, 30, 104 + i*52); g.fillText(d, 170, 104 + i*52); g.fillStyle = '#9fd28a'; g.fillText('定刻', 380, 104 + i*52); g.fillStyle = '#eef'; }); };
@@ -126,7 +126,9 @@ export function buildWorld(G){
   for (const l of lots){ const D = DEPTH[l.type], Wd = WIDTH[l.type], fx = Math.sin(l.ry), fz = Math.cos(l.ry), tx = fz, tz = -fx; const at = (a, b) => [l.x + fx*a + tx*b, l.z + fz*a + tz*b];
     colliders.push({ x:l.x, z:l.z, w:Wd, d:D, rot:l.ry });
     if (l.type === 'shop'){ W.shop = put('shop', l.x, l.z, l.ry); continue; }
-    (byType[l.type] = byType[l.type] || []).push({ x:l.x, z:l.z, ry:l.ry, s:1 }); yards.push(l);
+    if (l.home) W.homeHouse = put('house', l.x, l.z, l.ry);
+    else (byType[l.type] = byType[l.type] || []).push({ x:l.x, z:l.z, ry:l.ry, s:1 });
+    yards.push(l);
     // 庭のもの
     const free = (x, z, r) => roadDist(x, z) > r + 2.6 && lotFree(x, z, r, l);
     if (R() < 0.55) for (const sgn of [-1, 1]){ const [x, z] = at(D/2 + 0.45, sgn*(1.6 + R()*1.2)); planters.push({ x, z, ry:l.ry }); }

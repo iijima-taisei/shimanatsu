@@ -242,7 +242,7 @@ export class Player {
     this.cam.position.copy(this.camPos); this.look.set(this.pos.x, this.pos.y+1.35, this.pos.z); this.cam.lookAt(this.look);
   }
   // 外のカメラ：頭からカメラへの線を少しずつ進め、建物の当たり判定（高さの範囲も見る）に入る手前で止める。細い物（木・電柱）と車は見ない
-  camHit(tx, ty, tz){ const hx = this.pos.x, hy = this.pos.y + 1.4, hz = this.pos.z, len = Math.hypot(tx - hx, tz - hz) + 1.5, near = [];
+  camHit(tx, ty, tz){ if (this.room || (window.G && window.G.indoor === 'home')) return null; const hx = this.pos.x, hy = this.pos.y + 1.4, hz = this.pos.z, len = Math.hypot(tx - hx, tz - hz) + 1.5, near = [];
     for (const c of this.col){ if (c.off || c.off0 !== undefined || (c.r !== undefined && c.r < 0.8)) continue; const rr = c.r !== undefined ? c.r : Math.hypot(c.w, c.d)/2; if (Math.abs(c.x - hx) < len + rr && Math.abs(c.z - hz) < len + rr) near.push(c); }
     if (!near.length) return null; const N = 16;
     for (let i = 1; i <= N; i++){ const t = i/N, x = hx + (tx - hx)*t, y = hy + (ty - hy)*t, z = hz + (tz - hz)*t;
