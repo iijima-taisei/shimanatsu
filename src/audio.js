@@ -66,6 +66,35 @@ const SURF_LAND = {
   wood:    { dur:0.070, freq:280,  vol:0.90, type:'lowpass', tap:135 },
   shallow: { dur:0.135, freq:1050, vol:0.95, type:'bandpass' },
 };
+// 文化祭準備の作業別サウンド定義（0 輪かざり／1 看板／2 紙の花／3 提灯／4 横断幕）
+const PREP_SOUND = [
+  s => [
+    ['burst', 0.032, 3600 + s*260, 0.085, { type:'highpass' }],
+    ['tone', 1840 + s*110, 0.024, { type:'triangle', vol:0.04, attack:0.002, slide:0.62 }],
+    ['burst', 0.045, 2400, 0.065, { type:'bandpass', when:0.045 }],
+    ['tone', 1420 + s*90, 0.026, { type:'triangle', vol:0.035, attack:0.002, when:0.048, slide:0.55 }],
+  ],
+  s => [
+    ['burst', 0.095, 1650 + s*210, 0.075, { type:'bandpass' }],
+    ['burst', 0.045, 720, 0.06, { type:'lowpass', when:0.02 }],
+    ['tone', 210 + s*18, 0.05, { type:'triangle', vol:0.075, attack:0.002, when:0.015, slide:0.72 }],
+  ],
+  (s, step) => [
+    ['burst', 0.06, 3100 + s*240, 0.06, { type:'bandpass' }],
+    ['tone', 420 + step*28, 0.055, { type:'triangle', vol:0.05, attack:0.003, when:0.04, slide:0.82 }],
+    ['burst', 0.028, 1200, 0.055, { type:'bandpass', when:0.042 }],
+  ],
+  s => [
+    ['tone', 255 + s*22, 0.055, { type:'triangle', vol:0.075, attack:0.002, slide:0.68 }],
+    ['burst', 0.035, 950, 0.06, { type:'bandpass' }],
+    ['tone', 360 + s*30, 0.075, { type:'sine', vol:0.055, attack:0.004, when:0.055, slide:1.18 }],
+  ],
+  (s, step) => [
+    ['burst', 0.07, 2100 + s*220, 0.075, { type:'bandpass' }],
+    ['tone', 175 + s*15, 0.06, { type:'triangle', vol:0.085, attack:0.002, when:0.05, slide:0.65 }],
+    ['tone', 540 + step*35, 0.07, { type:'sine', vol:0.045, attack:0.005, when:0.055, slide:1.08 }],
+  ],
+];
 export const audio = {
   start(){ if (ctx) { ctx.resume(); return; }
     ctx = new (window.AudioContext || window.webkitAudioContext)(); master = ctx.createGain(); master.gain.value = 0.8;
@@ -173,6 +202,22 @@ export const audio = {
     this.burst(0.018, 1900, 0.09, { type:'bandpass', when:0.32 });
   },
   pickup(){ [1320, 1760, 2640].forEach((f, i) => this.tone(f, 0.25, { vol:0.09, when:i*0.07 })); },
+  // 文化祭準備の手作業音（紙・ハサミ／はけ・木板／お花紙・黒板／木枠・提灯／布・木枠）
+  prepStep(taskIdx, step = 1){
+    if (!ctx) return;
+    const fn = PREP_SOUND[taskIdx] || PREP_SOUND[0];
+    for (const [kind, a, b, c, opt] of fn(step % 4, step)){
+      if (kind === 'burst') this.burst(a, b, c, opt);
+      else this.tone(a, b, c);
+    }
+  },
+  // 文化祭準備の1タスク完了時の達成音（心地よい3音）
+  prepDone(){
+    if (!ctx) return;
+    [[523.25, 0.24, 0], [659.25, 0.24, 0.085], [783.99, 0.42, 0.17]].forEach(([f, dur, when]) => {
+      this.tone(f, dur, { type:'triangle', vol:0.08, attack:0.006, when, echo:true });
+    });
+  },
   // 釣りの予兆（微かな水音）と引き上げ成功音
   fishNibble(){ if (!ctx) return; this.burst(0.045, 1400 + Math.random()*300, 0.045, { type:'bandpass' }); this.tone(320 + Math.random()*50, 0.06, { vol:0.032, slide:0.72 }); },
   fishCatch(){ if (!ctx) return; this.burst(0.28, 750, 0.22); this.burst(0.36, 2200, 0.12, { type:'highpass', when:0.03 }); this.tone(240, 0.14, { type:'triangle', vol:0.12, slide:1.85 }); [1046.5, 1318.5, 1568].forEach((f, i) => this.tone(f, 0.24, { vol:0.085, when:0.05 + i*0.06 })); },

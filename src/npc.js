@@ -84,6 +84,7 @@ export class NPC {
       else {
         if (d > 40){ this.pos.x = P.pos.x - 1.5; this.pos.z = P.pos.z - 1.5; }
         else if (d > (G.aiai === this.id ? 0.8 : 2.1)){ /* 相合傘のときは、すぐそばを歩く */ const sp = d > 6 ? 8.6 : d > 3.2 ? 4.2 : 2.6; this.pos.x += dx/d*sp*dt; this.pos.z += dz/d*sp*dt; pose = sp > 5 ? 'run' : 'walk'; const ty = Math.atan2(dx, dz); let a = ty - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*10); }
+        else if (this.pose && gh >= -1){ pose = this.pose; if (d > 0.1){ let a = Math.atan2(dx, dz) - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*10); } }
       }
       if (gh < -1){ pose = 'swim'; this.pos.y += (-0.95 - this.pos.y)*Math.min(1, dt*10); } else this.pos.y += (gh - this.pos.y)*Math.min(1, dt*12);
       this.root.visible = true; this.ch.shadow.visible = gh >= -1;
@@ -117,7 +118,7 @@ export class NPC {
       if (this.spot.k === 'bon'){ const a = (BON.slots[this.id]/BON.n)*Math.PI*2 + G.time*0.11, x = BON.x + Math.sin(a)*BON.r, z = BON.z + Math.cos(a)*BON.r; this.pos.set(x, heightAt(x, z), z); this.spot = { ...this.spot, ry:a + Math.PI/2 }; }
       const s = this.spot; pose = s.pose; this.root.visible = s.room ? (rid(s) === 'class' ? G.world.classroom.visible && G.indoor !== 'home' && G.indoor !== 'shop' && G.indoor !== 'term' : G.indoor === rid(s)) : !s.hide;   // 教室は3階。ほかの階にいるときは（上の階を消しているので）見せない
       let yaw = (this.lookYaw != null && pose === 'idle') ? this.lookYaw : s.ry; const dx = P.pos.x - this.pos.x, dz = P.pos.z - this.pos.z;
-      if (pose === 'idle' && Math.hypot(dx, dz) < 3.5) yaw = Math.atan2(dx, dz);
+      if ((pose === 'idle' || this.pose === 'nod' || this.pose === 'wave') && Math.hypot(dx, dz) < 4.5) yaw = Math.atan2(dx, dz);
       const peer = this.chatPeer && G.npcs && G.npcs[this.chatPeer];
       if (peer && pose !== 'sit' && s.seat === undefined && !this.pose) yaw = Math.atan2(peer.pos.x - this.pos.x, peer.pos.z - this.pos.z);
       if (this.pose) pose = this.pose;

@@ -166,6 +166,7 @@ export class Character {
       case 'jump': P.legL=[-0.75,0,0]; P.legR=[-0.3,0,0]; P.shinL=[1.15,0,0]; P.shinR=[0.6,0,0]; P.armL=[-0.5,0,0.95]; P.armR=[-0.5,0,-0.95]; P.foreL=[-0.3,0,0]; P.foreR=[-0.3,0,0]; P.torso=[0.08,0,0]; break;
       case 'swim': P.hips=[1.25,0,0]; P.legL=[Math.sin(t*6)*0.35,0,0]; P.legR=[-Math.sin(t*6)*0.35,0,0]; P.armL=[-2.6+Math.sin(t*3)*0.9,0,0.3]; P.armR=[-2.6-Math.sin(t*3)*0.9,0,-0.3]; P.head=[-1.0,0,0]; hipY=-0.55+Math.sin(t*2)*0.04; break;
       case 'wave': P.armR=[0,0,-2.6+Math.sin(t*9)*0.3]; P.foreR=[0,0,-0.4+Math.sin(t*9)*0.3]; P.armL=[0,0,0.08]; P.torso=[0,0,Math.sin(t*2)*0.02]; break;
+      case 'nod': P.head=[0.22+Math.sin(t*11)*0.22,0,0]; P.torso=[0.06+Math.sin(t*11)*0.04,0,0]; P.armL=[-0.25,0,0.12]; P.armR=[-0.45+Math.sin(t*5.5)*0.12,0,-0.14]; P.foreL=[-0.4,0,0]; P.foreR=[-0.6,0,0]; break;
       // 机の上で手を動かす（切る・塗る・折る）。前かがみで、手元を見ている
       case 'craft': P.torso=[0.34,0,0]; P.head=[0.28,Math.sin(t*0.7)*0.06,0]; P.armL=[-0.62+Math.sin(t*4)*0.07,0,0.3]; P.armR=[-0.62-Math.sin(t*4)*0.1,0,-0.3]; P.foreL=[-0.95+Math.sin(t*4+1)*0.1,0,-0.35]; P.foreR=[-0.95-Math.sin(t*4+1)*0.22,0,0.35]; break;
       // スケッチブックを左手で抱えて、右手で描く

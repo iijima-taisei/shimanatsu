@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import * as T from '../data/story.js';
-import { TALK2 } from '../data/talk.js';
+import { TALK2, PREP_REACT } from '../data/talk.js';
 import { say, choose, talk, closeDialogue, dlg } from './dialogue.js';
 import { ROOM, ROOMS, SPOTS, HOME, HOME_IN, SHOP, SHOP_IN, TERM, TERM_IN, inVillage } from './world/places.js';
 import { BON } from './npc.js';
@@ -156,7 +156,7 @@ export function setupGame(G){
   });
   const listCv = document.createElement('canvas'); listCv.width = 1024; listCv.height = 384; const listTex = new THREE.CanvasTexture(listCv); listTex.colorSpace = THREE.SRGBColorSpace;
   { const m = new THREE.Mesh(new THREE.PlaneGeometry(3.9, 1.15), new THREE.MeshBasicMaterial({ map:listTex, transparent:true })); m.position.set(-4.43, 1.5, 0); m.rotation.y = Math.PI/2; W.classroom.add(m); }
-  const drawList = () => { const g = listCv.getContext('2d'), p = S().prep; g.clearRect(0, 0, 1024, 384); g.textBaseline = 'middle'; g.fillStyle = '#f4f1e4'; g.font = '56px "Yomogi", sans-serif'; g.fillText('白砂祭までに　やること', 40, 50);
+  const drawList = (p = S().prep) => { const g = listCv.getContext('2d'); g.clearRect(0, 0, 1024, 384); g.textBaseline = 'middle'; g.fillStyle = '#f4f1e4'; g.font = '56px "Yomogi", sans-serif'; g.fillText('白砂祭までに　やること', 40, 50);
     T.PREP_TASKS.forEach((t, i) => { const x = 50 + (i % 2)*490, y = 140 + Math.floor(i/2)*84; g.fillStyle = i < p ? '#f2d36b' : '#f4f1e4'; g.font = '52px "Yomogi", sans-serif'; g.fillText((i < p ? '◎ ' : i === p ? '→ ' : '・ ') + t.name, x, y); if (i < p){ g.fillRect(x + 62, y + 2, g.measureText(t.name).width + 8, 4); } }); listTex.needsUpdate = true; };
   document.fonts && document.fonts.ready.then(() => drawList());
   // 作業机の上に、いま取りかかっている作業の材料と作りかけを置く
@@ -279,18 +279,86 @@ export function setupGame(G){
     if (here){ await talk(stage.lines); friend('nagisa', 1); log(stage.log); } else { await talk(T.PREP_ALONE); log(`ひとりで${task.name}を進めた。`); }
     for (const id of ['kouta', 'kotoha']) if (G.npcs[id].root.visible && G.npcs[id].spot && G.npcs[id].spot.room) friend(id, 1);
     toast(st.prep < 5 ? `「${task.name}」が終わった（${st.prep} / 5）。次は「${T.PREP_TASKS[st.prep].name}」` : '文化祭の準備が、ぜんぶ終わった！', 4500); };
-  // 作業の画面：何を作っているかを出し、Eを押すたびに飾りが少しずつできていく
+  // 作業の画面：何を作っているかを出し、確認キーを押すたびに飾りが少しずつできていく
+  const PREP_FX = [
+    { colors:[0xe8554e, 0xf2c14e, 0x5aa9e6, 0x7bc96f, 0xf08cc0], size:3.4, up:0.9,  gravity:2.2, dur:0.55, k:0.38 },
+    { colors:[0x3f7fd0, 0xe8913f, 0xd9c39a, 0xf4f1e6],           size:3.0, up:0.8,  gravity:3.0, dur:0.45, k:0.34 },
+    { colors:[0xf7d6e6, 0xf08cc0, 0xf2c14e, 0x5aa9e6, 0x7bc96f], size:3.4, up:0.85, gravity:2.0, dur:0.58, k:0.36 },
+    { colors:[0xb9925a, 0xf6e6c0, 0xf08a7a, 0xd9c39a],           size:3.2, up:0.7,  gravity:2.8, dur:0.50, k:0.34 },
+    { colors:[0xf4f0e4, 0xc8463c, 0xd9c39a],                     size:3.2, up:0.8,  gravity:2.6, dur:0.50, k:0.40 },
+  ];
   const waitConfirm = () => new Promise(res => { const h = e => { if (e.repeat || !isConfirm(e.code)) return; removeEventListener('keydown', h); res(); }; addEventListener('keydown', h); });
-  const work = async i => { const task = T.PREP_TASKS[i], obj = W.decos[['deco1', 'sign1', 'deco2', 'deco3', 'deco4'][i]], $ = id => document.getElementById(id);
+  const work = async i => {
+    const task = T.PREP_TASKS[i], obj = W.decos[['deco1', 'sign1', 'deco2', 'deco3', 'deco4'][i]], $ = id => document.getElementById(id);
+    const cfg = PREP_FX[i] || PREP_FX[0];
+    const mates = ['nagisa', 'kouta', 'kotoha'].filter(id => {
+      const npc = G.npcs && G.npcs[id];
+      return npc && npc.root && npc.root.visible && Math.abs((npc.pos.y ?? P.pos.y) - P.pos.y) < 2.2
+        && (npc.following || (npc.spot && (npc.spot.room === true || npc.spot.room === 'class')));
+    });
+    const poseTimers = new Map();
+    const reactPose = (id, pose, sec = 0.85) => {
+      const npc = G.npcs[id]; if (!npc) return;
+      clearTimeout(poseTimers.get(id));
+      npc.pose = pose;
+      poseTimers.set(id, setTimeout(() => { if (npc.pose === pose) npc.pose = null; }, sec*1000));
+    };
     P.teleport(40.2, -62.5, -0.9); P.camYaw = task.cam[0]; P.camPitch = task.cam[1]; P.camDist = 3.4; P.pose = 'work';
-    G.renderer.localClippingEnabled = true; const saved = [], plane = new THREE.Plane(new THREE.Vector3(task.axis === 'x' ? -1 : 0, 0, task.axis === 'z' ? -1 : 0), 0); let lo = 0, hi = 1;
-    if (obj){ obj.visible = true; obj.updateMatrixWorld(true); const box = new THREE.Box3().setFromObject(obj); lo = box.min[task.axis] - 0.05; hi = box.max[task.axis] + 0.05;
-      obj.traverse(m => { if (m.isMesh){ saved.push([m, m.material]); m.material = m.material.clone(); m.material.clippingPlanes = [plane]; } }); }
+    G.renderer.localClippingEnabled = true; const saved = [], plane = new THREE.Plane(new THREE.Vector3(task.axis === 'x' ? -1 : 0, 0, task.axis === 'z' ? -1 : 0), 0);
+    let lo = 0, hi = 1, box = null;
+    if (obj){
+      obj.visible = true; obj.updateMatrixWorld(true); box = new THREE.Box3().setFromObject(obj);
+      lo = box.min[task.axis] - 0.05; hi = box.max[task.axis] + 0.05;
+      obj.traverse(m => { if (m.isMesh){ saved.push([m, m.material]); m.material = m.material.clone(); m.material.clippingPlanes = [plane]; } });
+    }
+    const emitStepFx = n => {
+      audio.prepStep(i, n);
+      if (!G.puff) return;
+      const edge = lo + (hi - lo)*(n - 0.5)/task.steps;
+      const px = box ? (task.axis === 'x' ? edge : (box.min.x + box.max.x)*0.5) : P.pos.x + Math.sin(P.yaw)*0.6;
+      const py = box ? (box.min.y + box.max.y)*0.5 : P.pos.y + 1.15;
+      const pz = box ? (task.axis === 'z' ? edge : (box.min.z + box.max.z)*0.5) : P.pos.z + Math.cos(P.yaw)*0.6;
+      const hx = P.pos.x + Math.sin(P.yaw)*0.55, hy = P.pos.y + 1.05, hz = P.pos.z + Math.cos(P.yaw)*0.55;
+      const c0 = cfg.colors[(n - 1) % cfg.colors.length], c1 = cfg.colors[n % cfg.colors.length];
+      G.puff(px, py, pz, cfg.k, { color:c0, size:cfg.size, opacity:0.9, up:cfg.up, gravity:cfg.gravity, dur:cfg.dur, n:8 });
+      G.puff(hx, hy, hz, cfg.k*0.85, { color:c1, size:cfg.size*0.9, opacity:0.85, up:cfg.up*0.9, gravity:cfg.gravity, dur:cfg.dur, n:6 });
+    };
     const show = n => { plane.constant = lo + (hi - lo)*n/task.steps; $('wbar').firstElementChild.style.width = (100*n/task.steps) + '%'; $('wcount').textContent = `${n} / ${task.steps} ${task.unit}`; };
-    $('wtitle').textContent = `準備 ${i + 1} / 5　${task.name}`; $('wdesc').textContent = task.how; $('whint').textContent = 'Eを押して、手を動かす'; show(0); $('work').classList.remove('hidden');
-    for (let n = 1; n <= task.steps; n++){ await waitConfirm(); audio.burst(0.07, 2400 + (n % 3)*500, 0.12, { type:'bandpass' }); audio.tone(520 + n*45, 0.12, { type:'triangle', vol:0.07 }); show(n); await wait(140); }
-    $('whint').textContent = task.done; audio.pickup(); await wait(1500); $('work').classList.add('hidden');
-    for (const [m, mat] of saved){ m.material.dispose(); m.material = mat; }   /* 切り取りは校舎の階の表示でも使うので、切らない */ P.pose = null; };
+    $('wtitle').textContent = `準備 ${i + 1} / 5　${task.name}`; $('wdesc').textContent = task.how;
+    $('whint').textContent = `${keyName(BIND.interact)}を押して、手を動かす`; show(0); $('work').classList.remove('hidden');
+    try {
+      for (let n = 1; n <= task.steps; n++){
+        await waitConfirm();
+        emitStepFx(n);
+        show(n);
+        if (mates.length){
+          const mid = mates[(n - 1) % mates.length];
+          reactPose(mid, n % 3 === 0 ? 'wave' : 'nod', 0.8);
+          const lines = PREP_REACT[mid] && PREP_REACT[mid].step;
+          if (lines && lines.length && G.speak && (n === 1 || n % 3 === 0 || !mates.some(id => G.speaking && G.speaking(id)))){
+            G.speak(mid, lines[(n - 1) % lines.length], 1.8);
+          }
+        }
+        await wait(140);
+      }
+      drawList(Math.max(S().prep, i + 1));
+      $('whint').textContent = task.done;
+      audio.prepDone();
+      if (mates.length){
+        for (const mid of mates) reactPose(mid, 'wave', 1.4);
+        const lead = mates.includes('nagisa') ? 'nagisa' : mates[0];
+        const doneLines = PREP_REACT[lead] && PREP_REACT[lead].done;
+        if (doneLines && doneLines.length && G.speak) G.speak(lead, doneLines[i % doneLines.length], 2.2);
+      }
+      await wait(1500);
+    } finally {
+      $('work').classList.add('hidden');
+      for (const t of poseTimers.values()) clearTimeout(t);
+      for (const mid of mates) if (G.npcs[mid]) G.npcs[mid].pose = null;
+      for (const [m, mat] of saved){ m.material.dispose(); m.material = mat; }   /* 切り取りは校舎の階の表示でも使うので、切らない */
+      P.pose = null;
+    }
+  };
   // 校舎には昇降口から歩いて（自転車でも）そのまま入れる（school.js）。自分の教室は3階
   I.push({ x:38.8, y:17.5, z:-61.4, r:1.7, when: () => G.inSchool && P.pos.y > 16, label: () => S().prep < 5 ? `文化祭の準備：${T.PREP_TASKS[S().prep].name}` : '教室をながめる', act: doPrep });
 
@@ -436,16 +504,17 @@ export function setupGame(G){
     finally { on = false; P.pose = null; if (c){ c.override = null; c.following = true; } P.camDist = 6.2; G.timeStop = false; }
     st.hour += 0.3; if (c) friend(G.companion, 2); log(c ? `家の前で、${N[G.companion]}と線香花火をした。` : '家の前で、ひとりで線香花火をした。'); }
 
-  // 着地の砂ぼこり・水しぶき
+  // 着地の砂ぼこり・水しぶき・作業の紙片や木くず
   G.puff = (x, y, z, k=1, opt={}) => {
     const color = opt.color ?? 0xd9cdb0, size = opt.size ?? 4, baseOp = opt.opacity ?? 0.8, up = opt.up ?? 1;
-    const n = 12, g = new THREE.BufferGeometry(), pos = new Float32Array(n*3), vel = [];
-    for (let i = 0; i < n; i++){ const a = i/n*Math.PI*2; pos.set([x, y + 0.05, z], i*3); vel.push([Math.cos(a)*(1.2 + Math.random())*k, (0.4 + Math.random()*0.5)*up, Math.sin(a)*(1.2 + Math.random())*k]); }
+    const n = opt.n ?? 12, dur = opt.dur ?? 0.4, grav = opt.gravity ?? 0;
+    const g = new THREE.BufferGeometry(), pos = new Float32Array(n*3), vel = [];
+    for (let i = 0; i < n; i++){ const a = i/n*Math.PI*2 + (Math.random() - 0.5)*0.3; pos.set([x, y + 0.05, z], i*3); vel.push([Math.cos(a)*(1.2 + Math.random())*k, (0.4 + Math.random()*0.5)*up, Math.sin(a)*(1.2 + Math.random())*k]); }
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     const m = new THREE.PointsMaterial({ color, size, sizeAttenuation:false, transparent:true, opacity:baseOp, depthWrite:false }), pts = new THREE.Points(g, m);
     pts.frustumCulled = false; G.scene.add(pts); let t = 0;
-    fx.push(dt => { t += dt; for (let i = 0; i < n; i++){ pos[i*3] += vel[i][0]*dt; pos[i*3+1] += vel[i][1]*dt; pos[i*3+2] += vel[i][2]*dt; vel[i][0] *= 0.9; vel[i][2] *= 0.9; } g.attributes.position.needsUpdate = true; m.opacity = baseOp*(1 - t/0.4);
-      if (t > 0.4){ G.scene.remove(pts); g.dispose(); m.dispose(); return false; } }); };
+    fx.push(dt => { t += dt; for (let i = 0; i < n; i++){ vel[i][1] -= grav*dt; pos[i*3] += vel[i][0]*dt; pos[i*3+1] += vel[i][1]*dt; pos[i*3+2] += vel[i][2]*dt; vel[i][0] *= 0.9; vel[i][2] *= 0.9; } g.attributes.position.needsUpdate = true; m.opacity = Math.max(0, baseOp*(1 - t/dur));
+      if (t > dur){ G.scene.remove(pts); g.dispose(); m.dispose(); return false; } }); };
   // 定期便：時刻表どおりに飛行機が島から飛び立つ（遠くからでも見える。乗りたいと思えるように）
   const DEPART = [9 + 10/60, 13 + 25/60, 16 + 40/60]; let depKey = -1;
   G.resetPlane = () => { const p = W.plane, h = W.planeHome; G.planeBusy = false; G.departing = null; p.visible = true; p.position.set(h.x, h.y, h.z); p.rotation.set(0, h.ry, 0); };
@@ -629,7 +698,7 @@ export function setupGame(G){
     if (st.diary.length && await choose('', 'これまでの絵日記を読み返しますか？', ['絵日記を読み返す', 'タイトルへもどる']) === 0) await browseDiary(st.diary, 0);
     localStorage.removeItem(SAVE); location.reload(); };
 
-  G.api = { refresh:() => hud(), leaveRoom:() => setIndoor(false), enterRoom, exitRoom, enter, exit, talkTo, truckRide, bonDance, senko, flight, doPrep, endDay, startDay, finale, epilogue, fade, rideBike, leaveBike, toast, log, friend };
+  G.api = { refresh:() => hud(), leaveRoom:() => setIndoor(false), enterRoom, exitRoom, enter, exit, talkTo, truckRide, bonDance, senko, flight, doPrep, work, endDay, startDay, finale, epilogue, fade, rideBike, leaveBike, toast, log, friend };
 
   // ---- 毎フレームの見はり ----
   let areaNow = null, lastChime = -1, lastChime17 = -1;

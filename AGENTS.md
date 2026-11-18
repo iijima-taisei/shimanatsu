@@ -337,3 +337,8 @@
 - 撮影対象の選定（events.js の pickPhotoTargets / samePhotoSpace / inCameraView）：友達・家族6人（nagisa, kouta, kotoha, mother, father, sister）のうち、10m以内・カメラ画角内・同一空間（高さ差2.2m未満を following 判定より先に適用）の者だけが対象。対象は 'photo' ポーズ（立ちは体を向けて片手上げ、座りは顔だけ向けて片手上げ、傘持ちは空いた左手）を取り、n.ch.update(1) で即反映してから記録する。ポーズは photoT 1.4秒で自動解除（朝リセット・吹っ飛び時もクリア）。
 - 吹き出し反応：npcai.js の sees は部屋判定を !n.following のときだけ適用し（同行中は屋内でも反応する）、G.observe('photo', { targets: posedIds, soon: true }) で対象だけが即座に反応する。セリフは talk.js の OBSERVE.photo 追加のみ。
 - 手動写真の保護：G.snap は成功時のみ manual を立て、失敗時は false を返して G.photo が早期 return する（未撮影で manual だけ立つ事故を防ぐ）。
+
+## 文化祭準備の手作業サウンド・小演出と仲間の掛け声（2026-11-18）
+- 作業音：audio.prepStep(taskIdx, step) が PREP_SOUND の5作業別パラメータ（輪かざりの紙・ハサミ、看板のはけ・木板、紙の花、提灯の木枠・和紙、横断幕の布・木枠）で合成音を鳴らす。work() の isConfirm() ごとに、飾りの出現位置と手元へ作業別の色紙片・絵の具・木くず・布片パーティクルを出す（G.puff に n・dur・gravity の任意指定を追加、既定値は従来どおり）。
+- 仲間の反応：同じ教室にいる仲間（スケジュール滞在・同行中とも）が手順ごとに 'nod'（うなずき、models.js に追加。関節名は不変）や 'wave' で呼応し、talk.js の PREP_REACT（nagisa・kouta・kotoha の短い掛け声のみ追加）の吹き出しを出す。終了時は finally でポーズ・マテリアルを必ず復元する。
+- 完了演出：タスク完了直後に drawList を即時再描画して黒板の「やること」表（◎＋取り消し線）を更新し、3音の達成音 audio.prepDone() を同時に鳴らす。PREP_TASKS の構造・回数・カメラは不変。
