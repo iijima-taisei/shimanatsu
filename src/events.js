@@ -41,6 +41,58 @@ export const loadSave = () => {
   } catch (e) { return null; }
 };
 
+export const PHOTO_NPCS = new Set(['nagisa', 'kouta', 'kotoha', 'mother', 'father', 'sister']);
+const _camV = new THREE.Vector3();
+const _camLocal = new THREE.Vector3();
+
+// 写真撮影でNPCが主人公と同じ空間にいるかを判定する
+export function samePhotoSpace(n, G){
+  if (!n || !n.root || !n.root.visible || !n.pos || !G.player || !G.player.pos) return false;
+  const s = n.spot || {};
+  if (s.hide) return false;
+  if (Math.abs(n.pos.y - G.player.pos.y) >= 2.2) return false;
+  if (n.following) return true;
+  const r = s.room === true ? 'class' : s.room;
+  if (G.indoor && G.indoor !== 'class') return r === G.indoor;
+  if (G.indoor === 'class') return r === 'class';
+  if (r && r !== 'class') return false;
+  if (r === 'class' && !G.inSchool) return false;
+  return true;
+}
+
+// NPCの体（足元+1.1m付近）がカメラの画角内にあるかを判定する
+export function inCameraView(camera, n){
+  if (!camera || !n || !n.pos) return false;
+  if (camera.updateMatrixWorld) camera.updateMatrixWorld();
+  if (!camera.matrixWorldInverse || !camera.projectionMatrix) return false;
+  const near = camera.near || 0.3, far = camera.far || 2400;
+  for (const h of [1.1, 1.45]){
+    _camV.set(n.pos.x, n.pos.y + h, n.pos.z);
+    _camLocal.copy(_camV).applyMatrix4(camera.matrixWorldInverse);
+    if (_camLocal.z >= -near || _camLocal.z <= -far) continue;
+    _camV.copy(_camLocal).applyMatrix4(camera.projectionMatrix);
+    if (Math.abs(_camV.x) <= 1 && Math.abs(_camV.y) <= 1 && _camV.z >= -1 && _camV.z <= 1) return true;
+  }
+  return false;
+}
+
+// 撮影時に反応する友達・家族（10m以内・画角内・同一空間）を選ぶ
+export function pickPhotoTargets(G, maxDist = 10){
+  const P = G && G.player;
+  if (!P || !G.npcs || !G.camera) return [];
+  const out = [];
+  for (const id in G.npcs){
+    if (!PHOTO_NPCS.has(id)) continue;
+    const n = G.npcs[id];
+    if (!n || n.knock || n.recover > 0) continue;
+    if (!samePhotoSpace(n, G)) continue;
+    if (Math.hypot(n.pos.x - P.pos.x, n.pos.y - P.pos.y, n.pos.z - P.pos.z) > maxDist) continue;
+    if (!inCameraView(G.camera, n)) continue;
+    out.push({ id, n });
+  }
+  return out;
+}
+
 export function setupGame(G){
   const P = G.player, W = G.world, I = G.interact = [];
   const S = () => G.state;
@@ -54,10 +106,36 @@ export function setupGame(G){
       toast(t === 1 ? `${N[id]}と、少し仲良くなった気がする` : `${N[id]}と、すっかり打ち解けた気がする`, 3200); audio.tone(784, 0.18, { type:'triangle', vol:0.06 }); audio.tone(1047, 0.3, { type:'triangle', vol:0.06, when:0.15 });
       log(t === 1 ? `${N[id]}と、少し仲良くなった気がする。` : `${N[id]}と、なんでも話せるようになってきた。`); } };
   const save = () => { try { localStorage.setItem(SAVE, JSON.stringify(S())); } catch (e) {} };
-  G.snap = (force=false, manual=false) => { if ((S().today.manual && !manual) || (S().today.photo && !force)) return; if (!G.renderer.domElement.width || !G.renderer.domElement.height) return;   // 画面が出ていないときは撮らない（写真の失敗でイベントを止めない）
+  G.snap = (force=false, manual=false) => { if ((S().today.manual && !manual) || (S().today.photo && !force)) return false; if (!G.renderer || !G.renderer.domElement || !G.renderer.domElement.width || !G.renderer.domElement.height) return false;   // 画面が出ていないときは撮らない（写真の失敗でイベントを止めない）
     G.renderer.render(G.scene, G.camera); const c = document.createElement('canvas'); c.width = 400; c.height = 250; const src = G.renderer.domElement; const sw = Math.min(src.width, src.height*1.6), sh = sw/1.6;
-    c.getContext('2d').drawImage(src, (src.width-sw)/2, (src.height-sh)/2, sw, sh, 0, 0, 400, 250); S().today.photo = c.toDataURL('image/jpeg', 0.72); };
-  G.photo = () => { if (G.lock || dlg.busy) return; G.snap(true, true); S().today.manual = true; audio.shutter(); const f = document.getElementById('flash'); f.style.transition = 'none'; f.style.opacity = 0.9; requestAnimationFrame(() => { f.style.transition = 'opacity .5s'; f.style.opacity = 0; }); toast('写真を撮った。今日の日記にのる'); };
+    c.getContext('2d').drawImage(src, (src.width-sw)/2, (src.height-sh)/2, sw, sh, 0, 0, 400, 250); S().today.photo = c.toDataURL('image/jpeg', 0.72); if (manual) S().today.manual = true; return true; };
+  let flashSeq = 0;
+  G.photo = () => { if (G.lock || dlg.busy || G.paused || G.mapOpen || G.mode === 'title' || G.mode === 'epilogue') return;
+    const targets = pickPhotoTargets(G), posedIds = [], camPos = G.camera && G.camera.position;
+    for (const { id, n } of targets){
+      if (n.chatPeer && G.npcai && G.npcai.interrupt) G.npcai.interrupt();
+      const camYaw = camPos ? Math.atan2(camPos.x - n.pos.x, camPos.z - n.pos.z) : n.yaw;
+      const seated = !!(n.ride || (n.spot && n.spot.seat !== undefined) || n.pose === 'sit' || (n.spot && n.spot.pose === 'sit') || (n.ch && n.ch.state === 'sit'));
+      n.photoT = 1.4; n.photoYaw = camYaw;
+      if (n.setHold) n.setHold(null);
+      if (n.ch){
+        n.ch.photoArm = true;
+        if (seated){ const rel = Math.atan2(Math.sin(camYaw - n.yaw), Math.cos(camYaw - n.yaw)); n.ch.photoHeadYaw = THREE.MathUtils.clamp(rel, -1.15, 1.15); n.ch.set('sit'); }
+        else { n.yaw = camYaw; if (n.root) n.root.rotation.y = camYaw; n.ch.photoHeadYaw = null; n.ch.set('photo'); }
+        n.ch.update(1);
+      } else if (!seated){ n.yaw = camYaw; if (n.root) n.root.rotation.y = camYaw; }
+      if (n.root && n.root.updateMatrixWorld) n.root.updateMatrixWorld(true);
+      posedIds.push(id);
+    }
+    if (!G.snap(true, true)) return;
+    audio.shutter();
+    const f = typeof document !== 'undefined' && document.getElementById('flash');
+    if (f){ const seq = ++flashSeq; f.style.transition = 'none'; f.style.opacity = 0.88; void f.offsetWidth;
+      const fadeFlash = () => { if (seq !== flashSeq) return; f.style.transition = 'opacity 0.18s ease-out'; f.style.opacity = 0; };
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fadeFlash); else fadeFlash(); }
+    toast('写真を撮った。今日の日記にのる');
+    if (posedIds.length && G.observe) G.observe('photo', P.pos.x, P.pos.z, { targets:posedIds, cooldown:3, soon:true });
+  };
   const run = async fn => { if (G.lock) return; G.lock = true; if (G.npcai && G.npcai.interrupt) G.npcai.interrupt(); try { await fn(); } finally { closeDialogue(); G.lock = false; } };
   G.run = run;
   G.browseDiary = () => run(() => browseDiary(S().diary));
@@ -519,7 +597,7 @@ export function setupGame(G){
       if (!P.driving && !P.riding && !st.today.meteorLog){ st.today.meteorLog = true; toast('あ、流れ星……'); log('夜空を横切る流れ星を見た。'); } }); }
   // ---- 1日のはじまり・おわり ----
   const hud = () => { const st = S(); G.applyPrep(); W.shells.forEach(s => s.mesh.visible = !st.shells.includes(s.id)); };
-  const startDay = async (first) => { const st = S(); st.hour = 7; st.today = { log:[], talked:{}, gave:{} }; G.companion = null; for (const k in G.npcs){ G.npcs[k].following = false; G.npcs[k].spot = null; G.npcs[k].override = null; }
+  const startDay = async (first) => { const st = S(); st.hour = 7; st.today = { log:[], talked:{}, gave:{} }; G.companion = null; for (const k in G.npcs){ G.npcs[k].following = false; G.npcs[k].spot = null; G.npcs[k].override = null; G.npcs[k].photoT = 0; if (G.npcs[k].ch){ G.npcs[k].ch.photoArm = false; G.npcs[k].ch.photoHeadYaw = null; } }
     P.dismountBike(true);
     for (const b of W.bikes){ const { mesh, home } = b; b.fly = null; mesh.position.set(home.x, home.y, home.z); mesh.rotation.set(0, home.ry, 0); mesh.visible = true; }
     if (G.resetCars) G.resetCars(); if (G.resetPlane) G.resetPlane(); if (G.schoolReset) G.schoolReset();

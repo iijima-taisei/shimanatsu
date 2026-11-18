@@ -46,7 +46,7 @@ export const SCHED = {
 };
 const FINAL = { nagisa:{ k:'fin', x:80, z:30.5, ry:PI/2, pose:'idle' }, kouta:{ k:'fin', x:83, z:35.5, ry:PI/2, pose:'idle' }, kotoha:{ k:'fin', x:78.5, z:38.5, ry:PI/2, pose:'idle' } };
 export class NPC {
-  constructor(id, scene, opt){ this.id = id; this.ch = new Character(opt); this.root = this.ch.root; this.pos = this.root.position; scene.add(this.root); this.spot = null; this.following = false; this.override = null; this.chatPeer = null; this.yaw = 0; }
+  constructor(id, scene, opt){ this.id = id; this.ch = new Character(opt); this.root = this.ch.root; this.pos = this.root.position; scene.add(this.root); this.spot = null; this.following = false; this.override = null; this.chatPeer = null; this.yaw = 0; this.photoT = 0; this.photoYaw = 0; }
   setHold(kind){ if (kind === this.holdKind) return; this.holdKind = kind; for (const m of this.held || []) m.parent && m.parent.remove(m); this.held = [];
     if (!kind) return; const [right, left] = HELD[kind](); const n = this.ch.n;
     for (const [list, node] of [[right, n.foreR], [left, n.foreL]]) for (const m of list){ if (!node) continue; if (m.position.y === 0) m.position.set(0, -0.36, 0.06); node.add(m); this.held.push(m); } }
@@ -74,13 +74,18 @@ export class NPC {
   update(dt, G){
     const S = G.state, P = G.player; let pose = 'idle';
     // 軽トラの荷台に乗っている（位置は car.js が毎フレーム合わせる）
-    if (G.knockMove && G.knockMove(this, dt)) return;   // はね飛ばされている最中（knock.js）
+    if (G.knockMove && G.knockMove(this, dt)){ if (this.photoT){ this.photoT = 0; this.ch.photoArm = false; this.ch.photoHeadYaw = null; } return; }   // はね飛ばされている最中（knock.js）
+    if (this.photoT > 0){ this.photoT = Math.max(0, this.photoT - dt); if (this.photoT === 0){ this.ch.photoArm = false; this.ch.photoHeadYaw = null; } }
     if (this.ride){ this.root.visible = true; this.ch.shadow.visible = false; this.doing = ''; this.setHold(null); this.root.rotation.y = this.yaw; this.ch.set('sit'); this.ch.update(dt); return; }
     if (this.following){
       const dx = P.pos.x - this.pos.x, dz = P.pos.z - this.pos.z, d = Math.hypot(dx, dz);
-      if (d > 40){ this.pos.x = P.pos.x - 1.5; this.pos.z = P.pos.z - 1.5; }
-      else if (d > (G.aiai === this.id ? 0.8 : 2.1)){ /* 相合傘のときは、すぐそばを歩く */ const sp = d > 6 ? 8.6 : d > 3.2 ? 4.2 : 2.6; this.pos.x += dx/d*sp*dt; this.pos.z += dz/d*sp*dt; pose = sp > 5 ? 'run' : 'walk'; const ty = Math.atan2(dx, dz); let a = ty - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*10); }
-      const gh = P.room ? P.room.y : G.groundAt(this.pos.x, this.pos.z, this.pos.y); if (gh < -1){ pose = 'swim'; this.pos.y += (-0.95 - this.pos.y)*Math.min(1, dt*10); } else this.pos.y += (gh - this.pos.y)*Math.min(1, dt*12);
+      const gh = P.room ? P.room.y : G.groundAt(this.pos.x, this.pos.z, this.pos.y);
+      if (this.photoT > 0 && gh >= -1){ pose = 'photo'; let a = this.photoYaw - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*12); }
+      else {
+        if (d > 40){ this.pos.x = P.pos.x - 1.5; this.pos.z = P.pos.z - 1.5; }
+        else if (d > (G.aiai === this.id ? 0.8 : 2.1)){ /* 相合傘のときは、すぐそばを歩く */ const sp = d > 6 ? 8.6 : d > 3.2 ? 4.2 : 2.6; this.pos.x += dx/d*sp*dt; this.pos.z += dz/d*sp*dt; pose = sp > 5 ? 'run' : 'walk'; const ty = Math.atan2(dx, dz); let a = ty - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*10); }
+      }
+      if (gh < -1){ pose = 'swim'; this.pos.y += (-0.95 - this.pos.y)*Math.min(1, dt*10); } else this.pos.y += (gh - this.pos.y)*Math.min(1, dt*12);
       this.root.visible = true; this.ch.shadow.visible = gh >= -1;
     } else {
       const bon = S.day === BON.day && S.hour >= BON.from && S.hour < BON.to && BON.slots[this.id] !== undefined;
@@ -92,7 +97,7 @@ export class NPC {
         if (far){ this.place(want); this.trip = null; this.wander = null; }
         else if (outside && (!this.trip || this.trip.k !== want.k) && Math.hypot(want.x - this.pos.x, want.z - this.pos.z) < 160){ this.trip = want; this.wander = null; this.stuck = 0; } }
       // 移動中：目的地へ向かって歩く。ぶつかりそうなら少し向きを変えてよける
-      if (this.trip && !this.lock){ const t = this.trip, dx = t.x - this.pos.x, dz = t.z - this.pos.z, d = Math.hypot(dx, dz);
+      if (this.trip && !this.lock && !(this.photoT > 0)){ const t = this.trip, dx = t.x - this.pos.x, dz = t.z - this.pos.z, d = Math.hypot(dx, dz);
         if (d < 0.35){ this.place(t); this.trip = null; this.wanderT = 3 + Math.random()*4; }
         else { const sp = d > 25 ? 3.6 : 1.5, r = this.step(dx/d, dz/d, sp*dt, G); if (!r) this.stuck += dt; else this.stuck = 0;
           if (this.stuck > 3 && Math.hypot(P.pos.x - this.pos.x, P.pos.z - this.pos.z) > 18){ this.place(t); this.trip = null; }
@@ -101,7 +106,7 @@ export class NPC {
       // ひまなとき（外で立っている）：まわりを少し歩いて、立ち止まって、あたりを見る
       { const sp0 = this.spot, free = sp0 && !sp0.room && !sp0.hide && sp0.seat === undefined && sp0.pose === 'idle' && sp0.k !== 'bon' && !this.pose && !this.override && !G.indoor;
         const talking = G.lock && Math.hypot(P.pos.x - this.pos.x, P.pos.z - this.pos.z) < 6;
-        if (free && !talking && !this.chatPeer){ this.wanderT = (this.wanderT ?? Math.random()*6) - dt;
+        if (free && !talking && !this.chatPeer && !(this.photoT > 0)){ this.wanderT = (this.wanderT ?? Math.random()*6) - dt;
           if (!this.wander && this.wanderT <= 0){ const a = Math.random()*Math.PI*2, r = 0.8 + Math.random()*2.8, x = sp0.x + Math.sin(a)*r, z = sp0.z + Math.cos(a)*r;
             if (!this.blocked(x, z, G)) this.wander = { x, z }; this.wanderT = 5 + Math.random()*9; this.lookYaw = null; }
           if (this.wander){ const dx = this.wander.x - this.pos.x, dz = this.wander.z - this.pos.z, d = Math.hypot(dx, dz);
@@ -116,11 +121,13 @@ export class NPC {
       const peer = this.chatPeer && G.npcs && G.npcs[this.chatPeer];
       if (peer && pose !== 'sit' && s.seat === undefined && !this.pose) yaw = Math.atan2(peer.pos.x - this.pos.x, peer.pos.z - this.pos.z);
       if (this.pose) pose = this.pose;
+      const seated = pose === 'sit' || s.seat !== undefined;
+      if (this.photoT > 0 && !seated){ pose = 'photo'; yaw = this.photoYaw; }
       let a = yaw - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a*Math.min(1, dt*6);
     }
     // 作業中は、していることに合わせた姿勢と持ち物にする
     let hold = null; this.doing = '';
-    if (!this.following && !this.pose && this.spot && pose === 'work'){
+    if (!this.following && !this.pose && !(this.photoT > 0) && this.spot && pose === 'work'){
       if (rid(this.spot) === 'class'){ if (S.prep < 5){ pose = 'craft'; hold = KIND[S.prep]; this.doing = PREP_TASKS[S.prep].doing; } else { pose = 'idle'; this.doing = 'できあがった教室をながめている'; } }
       else if (this.id === 'kotoha'){ pose = 'sketch'; hold = 'sketch'; this.doing = 'スケッチをしている'; } }
     this.setHold(hold);

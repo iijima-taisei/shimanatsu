@@ -331,3 +331,9 @@
 - 揺れは W.moving で WIND と風速に連動（すだれ下端のしなり、風鈴・短冊のピボット）。風鈴の合成音 audio.furin は自宅室内・庭先・商店付近で風まかせに鳴り、台風時と強風時（wind >= 0.7）は computeFurinSchedule で発音を止める。
 - 17時の時報：集落（inVillage＝本村・若浦）の屋外で17時ちょうど（17 <= hour < 17.05）を迎えたときだけ、audio.eveningChime（短い減衰サイン波和音のみ）を1日1回鳴らす。発火状態は実行時変数 lastChime17 のみで、保存には入れない。
 - 夕方の窓明かり：setNight(k) に建物ごとの時間差点灯を入れた（InstancedMesh は aLitOff 属性＋シェーダー補間の litDelayed、個別メッシュは registerDelayedLit / computeBuildingNight）。点灯オフセットは実行時乱数で、places.js の固定乱数 R() の呼び出しは変えていない。k=0 で全消灯、k=1 で従来どおり全点灯。
+
+## 写真撮影の手応えと友達・家族の反応（2026-11-18）
+- シャッター演出：audio.shutter は先幕・後幕のシャッター音に続けてフィルム巻き上げ（5段階の歯車音＋巻き止め）を合成する。G.photo はポーズ適用→G.snap(true, true) のキャプチャ完了後にだけ #flash（0.88→0.18秒 ease-out、flashSeq で連打対策、opacity 設定直後に void f.offsetWidth でリフロー確定）と toast・observe を発火し、フラッシュが写真データに写り込まない順序を守る。
+- 撮影対象の選定（events.js の pickPhotoTargets / samePhotoSpace / inCameraView）：友達・家族6人（nagisa, kouta, kotoha, mother, father, sister）のうち、10m以内・カメラ画角内・同一空間（高さ差2.2m未満を following 判定より先に適用）の者だけが対象。対象は 'photo' ポーズ（立ちは体を向けて片手上げ、座りは顔だけ向けて片手上げ、傘持ちは空いた左手）を取り、n.ch.update(1) で即反映してから記録する。ポーズは photoT 1.4秒で自動解除（朝リセット・吹っ飛び時もクリア）。
+- 吹き出し反応：npcai.js の sees は部屋判定を !n.following のときだけ適用し（同行中は屋内でも反応する）、G.observe('photo', { targets: posedIds, soon: true }) で対象だけが即座に反応する。セリフは talk.js の OBSERVE.photo 追加のみ。
+- 手動写真の保護：G.snap は成功時のみ manual を立て、失敗時は false を返して G.photo が早期 return する（未撮影で manual だけ立つ事故を防ぐ）。

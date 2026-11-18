@@ -156,7 +156,22 @@ export const audio = {
   },
   blip(){ this.tone(880, 0.04, { type:'square', vol:0.02 }); },
   select(){ this.tone(660, 0.09, { type:'triangle', vol:0.12 }); this.tone(990, 0.12, { type:'triangle', vol:0.1, when:0.07 }); },
-  shutter(){ this.burst(0.05, 3000, 0.25, { type:'highpass' }); this.burst(0.08, 2000, 0.2, { type:'highpass', when:0.09 }); },
+  // シャッター音＋フィルム巻き上げの合成音
+  shutter(){
+    if (!ctx) return;
+    // 先幕・後幕の歯切れよいシャッター音
+    this.burst(0.018, 4200, 0.28, { type:'highpass' });
+    this.tone(180, 0.025, { type:'triangle', vol:0.14, attack:0.002, slide:0.55 });
+    this.burst(0.024, 3400, 0.22, { type:'bandpass', when:0.045 });
+    this.tone(240, 0.022, { type:'triangle', vol:0.09, attack:0.002, when:0.045, slide:0.65 });
+    // フィルム巻き上げ（歯車の刻み＋巻き止め）
+    for (let i = 0; i < 5; i++){
+      const w = 0.15 + i * 0.03;
+      this.burst(0.015, 2500 + i * 160, 0.075, { type:'bandpass', when:w });
+      this.tone(620 + i * 35, 0.018, { type:'triangle', vol:0.036, attack:0.002, when:w, slide:0.82 });
+    }
+    this.burst(0.018, 1900, 0.09, { type:'bandpass', when:0.32 });
+  },
   pickup(){ [1320, 1760, 2640].forEach((f, i) => this.tone(f, 0.25, { vol:0.09, when:i*0.07 })); },
   // 釣りの予兆（微かな水音）と引き上げ成功音
   fishNibble(){ if (!ctx) return; this.burst(0.045, 1400 + Math.random()*300, 0.045, { type:'bandpass' }); this.tone(320 + Math.random()*50, 0.06, { vol:0.032, slide:0.72 }); },

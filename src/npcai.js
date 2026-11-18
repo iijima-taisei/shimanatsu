@@ -70,23 +70,30 @@ export function setupNpcAI(G){
     plane:() => '空港から定期便の飛行機が飛び立った', cat:() => '主人公が道ばたのねこをなでた', shell:() => '主人公が浜で貝がらを拾った',
     star:() => '夜空を流れ星が流れた', crab:() => '主人公が磯でカニをつかまえた',
     fish:o => `主人公が港で${o.fish || '魚'}を釣り上げた`, skip:o => `主人公が浜で水切りを${o.n || '何'}回も決めた`,
-    bug:o => `主人公が木で${o.bug || 'セミ'}をつかまえた` };
+    bug:o => `主人公が木で${o.bug || 'セミ'}をつかまえた`,
+    photo:() => '主人公がこちらにカメラを向けてシャッターを切った' };
   const FRIENDS = new Set(['nagisa', 'kouta', 'kotoha']);
   const mem = {}, kindCool = {}, kindReact = {}, npcCool = {}; let tObs = 3;
   const sees = (id, x, z) => { const n = G.npcs[id]; if (!n || !n.root.visible || !PERSONA[id] || n.knock || n.ride) return false; const s = n.spot || {};
-    if (G.indoor ? (s.room !== G.indoor && !(s.room === true && G.indoor === 'class')) : (s.room && !n.following)) return false; return x === null || Math.hypot(n.pos.x - x, n.pos.z - z) < 30; };
+    if (!n.following && (G.indoor ? (s.room !== G.indoor && !(s.room === true && G.indoor === 'class')) : (s.room && !(G.inSchool && (s.room === true || s.room === 'class') && Math.abs(n.pos.y - P.pos.y) < 2.2)))) return false;
+    return x === null || Math.hypot(n.pos.x - x, n.pos.z - z) < 30; };
   G.observe = (kind, x, z, o = {}) => {
     if (o.cooldown && kindCool[kind] !== undefined && G.time - kindCool[kind] < o.cooldown) return;
     let added = false;
     const ids = Object.keys(G.npcs);
     if (G.companion && G.npcs[G.companion]) ids.sort((a, b) => (a === G.companion ? -1 : b === G.companion ? 1 : 0));
     for (const id of ids){ if (id === o.except || !sees(id, x, z)) continue;
+      if (o.targets && !(Array.isArray(o.targets) ? o.targets.includes(id) : o.targets.has(id))) continue;
       if (o.friendsOnly && id !== G.companion && !FRIENDS.has(id)) continue;
       if (o.maxDist != null && x !== null && id !== G.companion && Math.hypot(G.npcs[id].pos.x - x, G.npcs[id].pos.z - z) > o.maxDist) continue;
       if (o.friendsOnly && (G.npcs[id].chatPeer || (o.cooldown && npcCool[id] !== undefined && G.time - npcCool[id] < o.cooldown*0.6))) continue;
       const m = mem[id] = mem[id] || [];
       if (m.some(e => e.kind === kind && G.time - e.t < 4)) continue; m.push({ kind, o, t:G.time, done:false }); if (m.length > 5) m.shift(); added = true; }
-    if (added){ if (o.cooldown) kindCool[kind] = G.time; if ((o.friendsOnly || o.cooldown) && tObs > 1.2) tObs = 1.2; }
+    if (added){
+      if (o.cooldown) kindCool[kind] = G.time;
+      if (o.soon && tObs > 0.35) tObs = 0.35;
+      else if ((o.friendsOnly || o.cooldown) && tObs > 1.2) tObs = 1.2;
+    }
   };
   const fill = (t, o) => t.replace(/\{who\}/g, o.who || '');
   // 見たことへのひとことを言う（AIが動いていればAI、だめなら控えの文）

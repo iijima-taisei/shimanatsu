@@ -122,7 +122,7 @@ export class Character {
     });
     const sh = new THREE.Mesh(new THREE.CircleGeometry(0.38, 10).rotateX(-Math.PI/2), new THREE.MeshBasicMaterial({color:0x000000, transparent:true, opacity:0.32, depthWrite:false}));
     sh.position.y = 0.04; this.root.add(sh); this.shadow = sh;
-    this.state = 'idle'; this.t = Math.random()*10; this.speed = 0; this.blend = {};
+    this.state = 'idle'; this.t = Math.random()*10; this.speed = 0; this.blend = {}; this.photoArm = false; this.photoHeadYaw = null;
   }
   set(state){ this.state = state; }
   // からだ全体を回す（宙返り・受け身・吹っ飛び）。rx は前まわり、rz は横まわり。回転の中心は腰のあたり（足もとから c）。
@@ -177,9 +177,15 @@ export class Character {
       // ラジオ体操：腕を大きく回して、上で伸びる
       case 'taiso': { const a = t*2.0; P.armL=[0,0,0.2+Math.max(0,Math.sin(a))*2.7]; P.armR=[0,0,-0.2-Math.max(0,Math.sin(a))*2.7]; P.legL=[0,0,0.12]; P.legR=[0,0,-0.12]; P.torso=[0,0,Math.sin(a*0.5)*0.08]; hipY = Math.min(0, Math.cos(a))*0.05; break; }
       case 'lookup': P.head=[-0.45,0,0]; P.armL=[0,0,0.08]; P.armR=[0,0,-0.08]; P.torso=[-0.05,0,0]; break;
+      case 'photo': P.armL=[0,0,0.08]; P.armR=[-0.55,0,-1.85]; P.foreR=[-0.65,0,-0.25]; P.torso=[0,0,0.03]; P.head=[-0.04,0,-0.04]; break;
       default: P.armL=[0,0,0.08+Math.sin(t*1.6)*0.015]; P.armR=[0,0,-0.08-Math.sin(t*1.6)*0.015]; P.torso=[Math.sin(t*1.6)*0.02,0,0]; P.head=[0,Math.sin(t*0.5)*0.15,0];
     }
     if (this.holdUp){ P.armR = [-1.75, 0, -0.1]; P.foreR = [-0.5, 0, 0.15]; }   // 傘や網を持ち上げる
+    if (this.photoArm){
+      if (this.holdUp){ P.armL = [-0.55, 0, 1.85]; P.foreL = [-0.65, 0, 0.25]; }
+      else { P.armR = [-0.55, 0, -1.85]; P.foreR = [-0.65, 0, -0.25]; }
+      if (this.photoHeadYaw !== null && this.photoHeadYaw !== undefined) P.head = [P.head[0] - 0.04, this.photoHeadYaw, -0.04];
+    }
     const k = Math.min(1, dt*10);
     for (const name of PARTS){ const o = n[name]; if (!o) continue; const r = P[name];
       o.rotation.x += (r[0]-o.rotation.x)*k; o.rotation.y += (r[1]-o.rotation.y)*k; o.rotation.z += (r[2]-o.rotation.z)*k; }
