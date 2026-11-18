@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { AIRPORT, heightAt, ZONES, PLATFORMS, ROADS, ROAD_W, ROAD_PTS, roadDist } from './terrain.js';
-import { model, sway, WIND } from '../models.js';
+import { model, sway, WIND, litDelayed, registerDelayedLit } from '../models.js';
 import { tex, textTex } from '../assets.js';
 
 export const SCHOOL = { x:30, z:-62 };
@@ -34,6 +34,8 @@ export const SPOTS = {
 };
 // 狭い場所を先に書く（先に当たったものが表示される）
 export const AREAS = [ [-412,64,48,'沖の小島'], [-34,-62,20,'峠の展望台'], [-84,-46,22,'潮見神社'], [-182,30,20,'石柱の湯'], [-190,250,26,'石山の展望台'], [84,34,34,'白砂の浜'], [-236,70,42,'白砂港'], [20,108,60,'白砂空港'], [135,-430,52,'若浦の集落'], [30,-45,52,'都立白砂高校'], [-75,40,60,'本村の集落'] ];
+export const inVillage = (x, z) => Math.hypot((x + 78)/68, (z - 38)/52) < 1 || Math.hypot((x - 135)/50, (z + 430)/28) < 1;   // 本村と、北の若浦
+const BUILDING_LIT = /^(window-glass|house-front|house-front2|shop-front)$/;
 
 function rng(seed){ return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), S = new THREE.Vector3(), UP = new THREE.Vector3(0,1,0);
@@ -60,9 +62,13 @@ export function buildWorld(G){
   const putCar = (x, z, ry) => { const mesh = put('keitruck', x, z, ry); const car = { mesh, home:{ x, y:mesh.position.y, z, ry } };
     car.col = { x, z, w:1.6, d:1.35, rot:ry, off0:0.95 }; car.bed = { x, z, w:1.6, d:2.05, rot:ry, off0:-0.58, h:0.95, car };
     for (const c of [car.col, car.bed]){ c.x = x + Math.sin(ry)*c.off0; c.z = z + Math.cos(ry)*c.off0; colliders.push(c); } W.cars.push(car); };
-  // amp を渡すと風に揺れる（草・茂み・木の葉）
+  // amp を渡すと風に揺れる（草・茂み・木の葉）。建物は litDelayed で夕方の窓明かりに時間差をつける
   const instanced = (name, list, amp=0) => { if (!list.length) return; const src = model(name); src.updateMatrixWorld(true);
-    src.traverse(o => { if (!o.isMesh) return; const im = new THREE.InstancedMesh(o.geometry, amp && !/bark|trunk/.test(o.material.name) ? sway(o.material, amp) : o.material, list.length);
+    src.traverse(o => { if (!o.isMesh) return;
+      const isLit = !amp && o.material && BUILDING_LIT.test(o.material.name);
+      let geo = o.geometry, mat = amp && !/bark|trunk/.test(o.material.name) ? sway(o.material, amp) : o.material;
+      if (isLit){ geo = o.geometry.clone(); const offs = new Float32Array(list.length); list.forEach((t, i) => { offs[i] = t.litOff ?? 0; }); geo.setAttribute('aLitOff', new THREE.InstancedBufferAttribute(offs, 1)); mat = litDelayed(o.material); }
+      const im = new THREE.InstancedMesh(geo, mat, list.length);
       list.forEach((t, i) => { P.set(t.x, (t.y ?? heightAt(t.x, t.z)) - 0.05, t.z); Q.setFromAxisAngle(UP, t.ry||0); S.setScalar(t.s||1); M.compose(P, Q, S).multiply(o.matrixWorld); im.setMatrixAt(i, M); });
       im.frustumCulled = false; scene.add(im); }); };
 
@@ -93,9 +99,12 @@ export function buildWorld(G){
   W.fans = [];
   for (const [k, x, z, ry] of [['home', -0.3, -2.6, -0.69], ['shop', 3.3, -2.5, -0.92], ['term', 6.4, -3.0, -1.13]]){ const f = model('fan'); f.position.set(x, 0, z); f.rotation.y = ry; W.interiors[k].add(f);
     W.fans.push({ head:f.getObjectByName('fanHead'), blades:f.getObjectByName('fanBlades'), t:Math.random()*10, room:k }); }
-  // 毎フレーム：風の時間を進め、扇風機の羽根を回して首を振る
+  // 毎フレーム：風の時間を進め、扇風機の羽根を回して首を振り、自宅軒先のすだれと風鈴を揺らす
+  let homeSway = null;
   W.moving = dt => { WIND.value += dt;
-    if (G.player){ const p = G.player.pos; for (const g of W.grassCells){ const [x, z] = g.userData.c; g.visible = (!G.indoor || G.indoor === 'home') && Math.hypot(x - p.x, z - p.z) < 120; } } for (const f of W.fans){ if (!W.interiors[f.room].visible) continue; f.t += dt; if (f.head) f.head.rotation.y = Math.sin(f.t*0.55)*0.75; if (f.blades) f.blades.rotation.z += dt*22; } };
+    if (G.player){ const p = G.player.pos; for (const g of W.grassCells){ const [x, z] = g.userData.c; g.visible = (!G.indoor || G.indoor === 'home') && Math.hypot(x - p.x, z - p.z) < 120; } }
+    for (const f of W.fans){ if (!W.interiors[f.room].visible) continue; f.t += dt; if (f.head) f.head.rotation.y = Math.sin(f.t*0.55)*0.75; if (f.blades) f.blades.rotation.z += dt*22; }
+    if (homeSway) homeSway(WIND.value, (G.weatherNow && G.weatherNow.wind) || 0); };
   W.interiors.shop.traverse(o => { if (o.isMesh && o.material.name === 'kori-flag-ds'){ o.material = o.material.clone(); o.material.map = textTex('氷', { w:128, h:256, font:'bold 150px "Zen Maru Gothic", sans-serif', fg:'#2f6fb5', bg:'#f4f0e4' }); o.material.color.set(0xffffff); } });
   { const cv = document.createElement('canvas'); cv.width = 512; cv.height = 256; const g = cv.getContext('2d'); const draw = () => { g.fillStyle = '#2f3a48'; g.fillRect(0, 0, 512, 256); g.fillStyle = '#f4d35e'; g.font = 'bold 34px "Zen Maru Gothic", sans-serif'; g.fillText('出発　DEPARTURES', 24, 46);
       g.fillStyle = '#eef'; g.font = 'bold 30px "Zen Maru Gothic", sans-serif'; [['09:10', '調布ゆき'], ['13:25', '調布ゆき'], ['16:40', '調布ゆき']].forEach(([t, d], i) => { g.fillText(t, 30, 104 + i*52); g.fillText(d, 170, 104 + i*52); g.fillStyle = '#9fd28a'; g.fillText('定刻', 380, 104 + i*52); g.fillStyle = '#eef'; }); };
@@ -111,7 +120,6 @@ export function buildWorld(G){
   const TYPES = ['house', 'house', 'house', 'house2', 'house2', 'house3', 'house3', 'house4', 'shed'];
   const lots = W.lots = [{ x:HOME.x, z:HOME.z, ry:0, type:'house', home:true }, { x:SHOP.x, z:SHOP.z, ry:Math.PI, type:'shop' }];
   const PLAZA = { x:-62.5, z:41, r:8 };
-  const inVillage = (x, z) => Math.hypot((x + 78)/68, (z - 38)/52) < 1 || Math.hypot((x - 135)/50, (z + 430)/28) < 1;   // 本村と、北の若浦
   const rad = t => Math.max(WIDTH[t], DEPTH[t])*0.5;
   const lotFree = (x, z, r, self) => lots.every(l => l === self || Math.hypot(l.x - x, l.z - z) > rad(l.type)*0.86 + r) && Math.hypot(x - PLAZA.x, z - PLAZA.z) > PLAZA.r + r;
   ROADS.forEach((road, ri) => { if (!road.lots) return; const hw = ROAD_W[road.kind]; const pts = ROAD_PTS.filter(p => p[4] === ri); const next = { '-1':4 + R()*5, '1':4 + R()*5 };
@@ -138,7 +146,9 @@ export function buildWorld(G){
     if (R() < 0.22 && trucks < 4){ const [x, z] = at(0.6, Wd/2 + 1.5); if (free(x, z, 1.6)){ putCar(x, z, l.ry + (R() - 0.5)*0.2); trucks++; } }
     else if (R() < 0.3){ const [x, z] = at(D/2 + 0.6, -Wd/2 + 1.2); putBike(x, z, l.ry + 1.4, { dy:0.02 }); }
   }
-  for (const k in byType) instanced(k, byType[k].map(t => ({ ...t, y: heightAt(t.x, t.z) + 0.05 })));
+  const delayBuilding = (root, off) => { root.traverse(o => { if (!o.isMesh || !o.material || !BUILDING_LIT.test(o.material.name)) return; const cl = o.material.clone(); cl.name = o.material.name; o.material = registerDelayedLit(cl, off); }); };
+  delayBuilding(W.shop, Math.random()*0.55); delayBuilding(W.homeHouse, Math.random()*0.55);
+  for (const k in byType) instanced(k, byType[k].map(t => ({ ...t, y: heightAt(t.x, t.z) + 0.05, litOff: Math.random()*0.55 })));
   // 通りに沿って塀を連続させる（家の門と交差点ではあける）。通りの輪郭がはっきりして、住宅街に見える
   ROADS.forEach((road, ri) => { if (!road.lots) return; const hw = ROAD_W[road.kind];
     for (const p of ROAD_PTS) { if (p[4] !== ri) continue; for (const side of [-1, 1]){ const x = p[0] + p[2]*side*(hw + 0.85), z = p[1] + p[3]*side*(hw + 0.85);
@@ -155,6 +165,47 @@ export function buildWorld(G){
     const m = new THREE.Mesh(g, patchMat); m.frustumCulled = false; scene.add(m); }
   putCar(HOME.x + 7.2, HOME.z + 0.6, 0);   // 家の横の軽トラ
   put('laundry', HOME.x - 6.8, HOME.z, Math.PI/2); putBike(HOME.x + 3.4, HOME.z + 4.2, 1.2, { dy:0.02 }); putMoped(HOME.x + 5.4, HOME.z + 3.6, 1.4);   // 家の原付（お父さんの）
+  // 自宅北窓の外側・軒先：すだれ（sudare-alpha）と風鈴（本体＋短冊）。W.homeHouse とは別に置き、自宅室内からも窓越しに見えるようにする
+  { const hy = heightAt(HOME.x, HOME.z), eaves = new THREE.Group(); eaves.position.set(HOME.x, hy, HOME.z); scene.add(eaves);
+    const bambooMat = new THREE.MeshLambertMaterial({ color:0xc5a86a }), cordMat = new THREE.MeshLambertMaterial({ color:0x4b3b2c });
+    const sudareMat = new THREE.MeshLambertMaterial({ map:tex('sudare-alpha', { repeat:false }), transparent:true, alphaTest:0.15, side:THREE.DoubleSide });
+    sudareMat.name = 'sudare-alpha';
+    const sx = 3.45, sz = -3.86, yTop = 2.52, yBot = 1.15, sh = yTop - yBot;
+    for (const dx of [-0.72, 0.72]){ const c = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.14, 0.018), cordMat); c.position.set(sx + dx, yTop + 0.06, sz); eaves.add(c); }
+    const barGeo = new THREE.CylinderGeometry(0.022, 0.022, 1.80, 6); barGeo.rotateZ(Math.PI/2);
+    const topBar = new THREE.Mesh(barGeo, bambooMat); topBar.position.set(sx, yTop, sz); eaves.add(topBar);
+    const botBar = new THREE.Mesh(barGeo, bambooMat); botBar.position.set(sx, yBot, sz); eaves.add(botBar);
+    const sudareGeo = new THREE.PlaneGeometry(1.70, sh, 2, 6);
+    const sudarePos = sudareGeo.attributes.position, sudareRest = sudarePos.array.slice();
+    const sudareMesh = new THREE.Mesh(sudareGeo, sudareMat); sudareMesh.position.set(sx, (yTop + yBot)/2, sz); sudareMesh.renderOrder = 2; eaves.add(sudareMesh);
+    // 風鈴：北窓の左側の軒先に吊るし、風に合わせて本体と短冊を揺らす
+    const fx = 2.42, fz = -3.62, fCord = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.62, 0.012), cordMat);
+    fCord.position.set(fx, 2.46, fz); eaves.add(fCord);
+    const furinPivot = new THREE.Group(); furinPivot.position.set(fx, 2.15, fz); eaves.add(furinPivot);
+    const bellPts = [new THREE.Vector2(0, 0), new THREE.Vector2(0.055, -0.015), new THREE.Vector2(0.075, -0.065), new THREE.Vector2(0.072, -0.11)];
+    const bell = new THREE.Mesh(new THREE.LatheGeometry(bellPts, 8), new THREE.MeshLambertMaterial({ color:0x9adcf2, transparent:true, opacity:0.72, side:THREE.DoubleSide }));
+    bell.renderOrder = 2; furinPivot.add(bell);
+    const clapper = new THREE.Mesh(new THREE.OctahedronGeometry(0.018, 0), new THREE.MeshLambertMaterial({ color:0xd85a4a }));
+    clapper.position.y = -0.095; furinPivot.add(clapper);
+    const tanzakuPivot = new THREE.Group(); tanzakuPivot.position.set(0, -0.11, 0); furinPivot.add(tanzakuPivot);
+    const tCord = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.08, 0.008), cordMat); tCord.position.y = -0.04; tanzakuPivot.add(tCord);
+    const tanzaku = new THREE.Mesh(new THREE.PlaneGeometry(0.065, 0.26, 1, 3), new THREE.MeshLambertMaterial({ color:0xe6f3f8, side:THREE.DoubleSide }));
+    tanzaku.position.y = -0.21; tanzakuPivot.add(tanzaku);
+    homeSway = (wt, windAmt) => {
+      const sp = 2.0 + windAmt*3.5, amp = 0.012 + windAmt*0.14;
+      for (let i = 0; i < sudarePos.count; i++){
+        const rx = sudareRest[i*3], ry = sudareRest[i*3 + 1], rz = sudareRest[i*3 + 2];
+        const u = Math.max(0, Math.min(1, (sh/2 - ry)/sh));
+        const dz = -amp*(0.5 + 0.5*Math.sin(wt*sp + rx*1.4))*u*u;
+        sudarePos.setXYZ(i, rx, ry + Math.abs(dz)*0.12, rz + dz);
+      }
+      sudarePos.needsUpdate = true;
+      const botDz = -amp*(0.5 + 0.5*Math.sin(wt*sp));
+      botBar.position.set(sx, yBot + Math.abs(botDz)*0.12, sz + botDz);
+      const ph = wt*(2.1 + windAmt*4.2);
+      furinPivot.rotation.set(Math.sin(ph*0.7)*(0.02 + windAmt*0.14) + windAmt*0.12, 0, Math.cos(ph*0.55)*(0.015 + windAmt*0.10));
+      tanzakuPivot.rotation.set(Math.sin(ph)*(0.10 + windAmt*0.55) + windAmt*0.35, Math.sin(ph*0.41)*(0.15 + windAmt*0.60), Math.cos(ph*0.83 + 0.7)*(0.07 + windAmt*0.38));
+    }; }
   put('vending', -77.8, 62.4, Math.PI, { box:[1.1, 0.9] });
   W.shop.traverse(o => { if (o.isMesh && o.material.name === 'shop-sign'){ o.material = o.material.clone(); o.material.map = textTex('しおかぜ商店', { w:512, h:96, font:'bold 64px "Zen Maru Gothic", sans-serif' }); o.material.color.set(0xffffff); } });
   // 辻の広場：火の見やぐら（集落の目印）・ポスト・掲示板

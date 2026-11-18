@@ -3,6 +3,15 @@ let ctx = null, master, noiseBuf; const L = {};
 function noise(){ const b = ctx.createBufferSource(); b.buffer = noiseBuf; b.loop = true; b.start(); return b; }
 function gainTo(g, v, t=0.8){ g.gain.setTargetAtTime(v, ctx.currentTime, t); }
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+// 風鈴の発音可否と次回間隔・音量を決める（台風時は鳴りすぎないよう停止する）
+export function computeFurinSchedule(wind = 0, kind = 'clear', indoor = false){
+  if (kind === 'typhoon' || wind >= 0.7) return { allow:false, minWait:0, maxWait:0, vol:0 };
+  const w = clamp(wind || 0, 0, 0.7);
+  const minWait = Math.max(3.5, 6.0 - w*3.5);
+  const maxWait = Math.max(minWait + 2.5, 13.0 - w*7.0);
+  const vol = (indoor ? 0.65 : 1.0)*(0.9 + w*0.2);
+  return { allow:true, minWait, maxWait, vol };
+}
 // 自転車・原付の風切り音パラメータ計算（速度に応じて立ち上がり、停止・消音時はゼロへ）
 export function computeRideWindParams(v, on = true){
   const active = !!on && v > 5.5;
@@ -158,7 +167,26 @@ export const audio = {
   skipBounce(i){ if (!ctx) return; const f = 760*Math.pow(1.075, i); this.tone(f, 0.075, { vol:0.09, slide:1.22 }); this.tone(f*1.5, 0.055, { type:'triangle', vol:0.045, when:0.01 }); this.burst(0.05, Math.min(5500, 2200 + i*220), 0.055, { type:'highpass' }); },
   crabScuttle(near=0.5){ if (!ctx) return; const v = 0.028 + near*0.026; this.burst(0.022, 3200 + Math.random()*800, v, { type:'bandpass' }); this.burst(0.022, 4000 + Math.random()*900, v*0.85, { type:'bandpass', when:0.045 }); },
   crabCatch(){ if (!ctx) return; [880, 1174.7, 1480, 1760].forEach((f, i) => this.tone(f, 0.22, { vol:0.085, when:i*0.055 })); },
-  furin(){ const f = 2300 + Math.random()*500; this.tone(f, 1.6, { vol:0.07 }); this.tone(f*2.76, 0.9, { vol:0.025 }); },
+  // 自宅・店先の涼やかなガラス風鈴の合成音（うなり＋非整数倍音＋時々の揺り返し）
+  furin(volScale = 1){
+    if (!ctx || volScale <= 0) return;
+    const f = 2280 + Math.random()*540, v = 0.055*volScale;
+    this.tone(f, 1.75, { type:'sine', vol:v, attack:0.004, echo:true });
+    this.tone(f*1.005, 1.65, { type:'sine', vol:v*0.55, attack:0.005 });
+    this.tone(f*2.756, 0.95, { type:'sine', vol:v*0.32, attack:0.003 });
+    if (Math.random() < 0.35){
+      const w = 0.18 + Math.random()*0.12, f2 = f*(0.99 + Math.random()*0.03);
+      this.tone(f2, 1.35, { type:'sine', vol:v*0.55, attack:0.004, when:w, echo:true });
+      this.tone(f2*2.756, 0.75, { type:'sine', vol:v*0.18, attack:0.003, when:w });
+    }
+  },
+  // 17時の時報チャイム（遠くから柔らかく響く短い減衰サイン波和音のみ。BGMではない環境時報）
+  eveningChime(){
+    if (!ctx) return;
+    const notes = [[392.00, 0.0], [523.25, 0.52], [659.25, 1.04], [523.25, 1.56]];
+    for (const [f, when] of notes) this.tone(f, 1.7, { type:'sine', vol:0.048, attack:0.05, when, echo:true });
+    this.tone(392.00, 2.2, { type:'sine', vol:0.032, attack:0.06, when:1.56, echo:true });
+  },
   chime(){ const E=659.25, C=523.25, D=587.33, G=392.0; [[E,C,D,G],[C,D,E,C],[E,C,D,G],[G,D,E,C]].forEach((p, i) => p.forEach((f, j) => { const w = i*3.4 + j*0.7; this.tone(f, 1.9, { vol:0.11, when:w, echo:true, attack:0.005 }); this.tone(f*2, 1.2, { vol:0.03, when:w, echo:true }); })); },
   higurashi(){ const base = 3700 + Math.random()*300; for (let i=0;i<14;i++){ const w = i*(0.17 - i*0.004); this.tone(base*(1 - i*0.012), 0.13, { vol:0.045*(1 - i/18), when:w, echo:true }); } },
   bird(sea){ if (!ctx) return; if (sea){ const f = 1450 + Math.random()*250; this.tone(f, 0.36, { vol:0.035, slide:1.25, echo:true }); this.tone(f*1.12, 0.42, { vol:0.028, when:0.42, slide:0.88, echo:true }); }
@@ -204,6 +232,7 @@ export const audio = {
     if (s.hour > 5.8 && s.hour < 9.2 && !s.quiet && !s.indoor && t > (this.nextBird || 0)){ this.bird(s.coast > 0.55); this.nextBird = t + 5 + Math.random()*8; }
     if ((s.day || 0) >= 6 && s.hour > 13 && s.hour < 16.8 && !s.quiet && s.coast < 0.6 && t > (this.nextTsuku || 0)){ this.tsuku(); this.nextTsuku = t + 9 + Math.random()*12; }
     if (night && !s.quiet && !s.indoor && t > (this.nextSuzu || 0)){ this.suzumushi(); this.nextSuzu = t + 5 + Math.random()*8; }
-    if (s.furin && t > (this.nextFurin||0)){ this.furin(); this.nextFurin = t + 2 + Math.random()*7; }
+    const furinSch = computeFurinSchedule(s.wind || 0, s.weatherKind || 'clear', !!s.indoor);
+    if (s.furin && furinSch.allow && t > (this.nextFurin || 0)){ this.furin(furinSch.vol); this.nextFurin = t + furinSch.minWait + Math.random()*(furinSch.maxWait - furinSch.minWait); }
     /* BGMは鳴らさない（環境音だけ） */ },
 };

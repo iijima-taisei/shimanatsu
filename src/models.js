@@ -12,6 +12,37 @@ const matCache = {};
 const LIT = /^(window-glass|house-front|house-front2|shop-front|vending|lh-lamp|lantern|lampshade|desklamp|light-panel)$/;
 let nightNow = -1;
 export const extraLit = [];
+export const NIGHT_UNI = { value:0 };
+const delayedLit = [];
+const delayedMatCache = new WeakMap();
+// 建物ごとの時間差点灯カーブ（offset は 0..0.55 の実行時オフセット）
+export function computeBuildingNight(k, offset = 0, span = 0.18){
+  if (k <= 0) return 0;
+  if (k >= 1) return 1;
+  const u = Math.max(0, Math.min(1, (k - offset)/span));
+  return u*u*(3 - 2*u);
+}
+export function registerDelayedLit(mat, off = 0){
+  delayedLit.push({ mat, off });
+  return mat;
+}
+// インスタンス化される建物用：aLitOff 属性で建物ごとにわずかな時間差をつけて灯す
+export function litDelayed(mat){
+  if (!LIT.test(mat.name)) return mat;
+  if (delayedMatCache.has(mat)) return delayedMatCache.get(mat);
+  const m = mat.clone(); m.name = mat.name; m.emissiveIntensity = m.map ? 0.75 : 1.0;
+  m.onBeforeCompile = sh => {
+    sh.uniforms.uNight = NIGHT_UNI;
+    sh.vertexShader = 'uniform float uNight; attribute float aLitOff; varying float vLitK;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+      float uLit = clamp((uNight - aLitOff) / 0.18, 0.0, 1.0);
+      vLitK = uNight <= 0.0 ? 0.0 : (uNight >= 1.0 ? 1.0 : uLit * uLit * (3.0 - 2.0 * uLit));`);
+    sh.fragmentShader = 'varying float vLitK;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      totalEmissiveRadiance *= vLitK;`);
+  };
+  m.customProgramCacheKey = () => 'lit-delayed';
+  delayedMatCache.set(mat, m);
+  return m;
+}
 // 風：草や木の葉を、高いところほど大きく揺らす（頂点シェーダーで動かす。amp は揺れの強さ）
 export const WIND = { value:0 };
 const swayCache = {};
@@ -28,7 +59,13 @@ export function sway(mat, amp){ const key = mat.uuid + '|' + amp; if (swayCache[
       transformed.x += (sin(ph) + 0.45*sin(ph*2.3 + 1.7))*hk*uAmp;
       transformed.z += (cos(ph*0.8) + 0.3*sin(ph*1.9))*hk*uAmp*0.6;`); };
   m.customProgramCacheKey = () => 'sway' + amp; swayCache[key] = m; return m; }   // 複製した灯りの材質（校舎の中の蛍光灯など）
-export function setNight(k){ if (Math.abs(k - nightNow) < 0.02) return; nightNow = k; for (const m of [...Object.values(matCache), ...extraLit]){ if (LIT.test(m.name)) m.emissiveIntensity = k*(m.map ? 0.75 : 1.0) + (/lh-lamp|lantern/.test(m.name) ? 0.25 : 0); } }
+export function setNight(k){
+  if (k === nightNow) return;
+  if (k !== 0 && k !== 1 && Math.abs(k - nightNow) < 0.02) return;
+  nightNow = k; NIGHT_UNI.value = k;
+  for (const m of [...Object.values(matCache), ...extraLit]){ if (LIT.test(m.name)) m.emissiveIntensity = k*(m.map ? 0.75 : 1.0) + (/lh-lamp|lantern/.test(m.name) ? 0.25 : 0); }
+  for (const d of delayedLit){ const bk = computeBuildingNight(k, d.off); d.mat.emissiveIntensity = bk*(d.mat.map ? 0.75 : 1.0); }
+}
 function prep(root){
   root.traverse(o => { if (!o.isMesh) return; const src = o.material; const name = src.name.replace(/\.\d+$/, ''); const key = name + '|' + src.color.getHexString();
     let m = matCache[key];
@@ -37,7 +74,7 @@ function prep(root){
       if (TEXTURES.has(name)){ m.map = tex(name, { flipY:false }); m.color.set(0xffffff); }
       if (ALPHA.has(name)){ m.alphaTest = 0.45; m.side = THREE.DoubleSide; }
       if (/-ds$|skirt|cloth-apron|^eave$/.test(name)) m.side = THREE.DoubleSide;
-      if (/-alpha$/.test(name)){ m.transparent = true; m.opacity = 0.3; m.side = THREE.DoubleSide; m.depthWrite = false; }
+      if (/-alpha$/.test(name)){ m.side = THREE.DoubleSide; m.transparent = true; if (ALPHA.has(name)){ m.alphaTest = 0.2; } else { m.opacity = 0.3; m.depthWrite = false; } }
       if (name === 'water'){ m.transparent = true; m.opacity = 0.8; }
       if (LIT.test(name)){ if (m.map) m.emissiveMap = m.map; m.emissive.setRGB(1, 0.76, 0.46); m.emissiveIntensity = 0; }
       matCache[key] = m; }

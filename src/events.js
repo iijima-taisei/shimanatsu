@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import * as T from '../data/story.js';
 import { TALK2 } from '../data/talk.js';
 import { say, choose, talk, closeDialogue, dlg } from './dialogue.js';
-import { ROOM, ROOMS, SPOTS, HOME, HOME_IN, SHOP, SHOP_IN, TERM, TERM_IN } from './world/places.js';
+import { ROOM, ROOMS, SPOTS, HOME, HOME_IN, SHOP, SHOP_IN, TERM, TERM_IN, inVillage } from './world/places.js';
 import { BON } from './npc.js';
 import { TYPHOON_DAY } from './weather.js';
 import { heightAt } from './world/terrain.js';
@@ -10,6 +10,13 @@ import { composeDiary, showDiary, browseDiary, dayWeather } from './diary.js';
 import { audio } from './audio.js';
 import { isConfirm, keyName, BIND, SETTINGS } from './keys.js';
 const N = T.NAMES, wait = ms => new Promise(r => setTimeout(r, ms)), SAVE = 'shimanatsu-save-v1';
+// 17時時報チャイムの発火判定（1日1回だけ・17時ちょうど・集落かつ屋外）
+export function shouldPlayEveningChime({ day, hour, lastDay, x, z, indoor, inSchool }){
+  if (lastDay === day) return false;
+  if (hour < 17 || hour >= 17.05) return false;
+  if (indoor || inSchool) return false;
+  return inVillage(x, z);
+}
 export const newState = () => ({ day:0, hour:7, prep:0, friends:{ nagisa:0, kouta:0, kotoha:0, oneesan:0 }, ramune:0, fish:0, bugs:[], crabs:[], skip:0, goals:0, shells:[], walked:{}, flags:{}, diary:[], taiso:0, seen:{}, items:{}, money:0, fishSold:0, today:{ log:[], talked:{}, gave:{} } });
 export const loadSave = () => {
   try {
@@ -547,7 +554,7 @@ export function setupGame(G){
   G.api = { refresh:() => hud(), leaveRoom:() => setIndoor(false), enterRoom, exitRoom, enter, exit, talkTo, truckRide, bonDance, senko, flight, doPrep, endDay, startDay, finale, epilogue, fade, rideBike, leaveBike, toast, log, friend };
 
   // ---- 毎フレームの見はり ----
-  let areaNow = null, lastChime = -1;
+  let areaNow = null, lastChime = -1, lastChime17 = -1;
   G.watch = () => { const st = S(); if (G.mode !== 'play' || G.lock) return;
     if (P.riding && P.bikeSpeed>2 && !st.today.bike){ st.today.bike = true; log(T.BIKE.diary); }
     // 場所の名前
@@ -560,8 +567,9 @@ export function setupGame(G){
       if (st.hour >= 18 && G.indoor === 'home' && !st.today.blackout){ st.today.blackout = true; run(blackout); return; } }
     // 夕方、家に帰ると家族で夕ごはん
     if (st.hour >= 17.8 && st.hour < 20.5 && G.indoor === 'home' && !st.today.dinner && st.day !== 11 && !(st.day === TYPHOON_DAY && !st.today.blackout)){ st.today.dinner = true; run(dinner); return; }
-    // チャイム
-    for (const h of [12, 17]) if (st.hour >= h && st.hour < h + 0.05 && lastChime !== st.day*100 + h){ lastChime = st.day*100 + h; audio.chime(); if (h === 17) toast('五時のチャイムが島じゅうに響いている'); }
+    // チャイム（12時のチャイムと、17時の集落屋外時報）
+    if (st.hour >= 12 && st.hour < 12.05 && lastChime !== st.day*100 + 12){ lastChime = st.day*100 + 12; audio.chime(); }
+    if (shouldPlayEveningChime({ day:st.day, hour:st.hour, lastDay:lastChime17, x:P.pos.x, z:P.pos.z, indoor:G.indoor, inSchool:G.inSchool })){ lastChime17 = st.day; audio.eveningChime(); toast('五時のチャイムが遠くから聞こえてきた'); }
     // 行き先の会話は一度だけ。夕日は訪れ直した場所でも、その日に一度見られる。
     if (G.companion && !G.indoor) for (const k in SPOTS){ const id = G.companion, s = SPOTS[k], key = k + ':' + id; if (Math.hypot(P.pos.x - s.x, P.pos.z - s.z) > s.r) continue;
       const firstWalk = !st.walked[key], sunset = st.hour > 17.2 && st.hour < 19.3 && ['beach', 'pier', 'onsen', 'lookout', 'ishiyama'].includes(k) && !st.today.sunset;
