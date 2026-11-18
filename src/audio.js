@@ -43,6 +43,26 @@ export const audio = {
     this.tone(b*0.76, 0.38, { vol:0.02, when:1.7, slide:0.82 }); },
   suzumushi(){ if (!ctx) return; const f = 4650 + Math.random()*150; for (let i = 0; i < 6; i++) this.tone(f, 0.09, { vol:0.014, when:i*0.14 }); },
   firework(){ this.tone(900, 0.9, { vol:0.03, slide:2.2 }); this.burst(1.6, 220, 0.9, { when:0.95, echo:true }); this.burst(1.2, 5000, 0.12, { when:1.3, type:'highpass' }); },
+  // 窓ガラスが割れる音（連続発音時は音割れ防止のため抑える）
+  glass(vol = 1){
+    if (!ctx || vol <= 0) return;
+    const t = ctx.currentTime;
+    if (this.lastGlass !== undefined && t - this.lastGlass < 0.06) vol *= 0.45;
+    this.lastGlass = t;
+    this.burst(0.09, 4200, 0.32*vol, { type:'highpass' });
+    this.burst(0.22, 2600, 0.22*vol, { type:'bandpass', when:0.015, echo:true });
+    const pings = [
+      [3280, 0.18, 0.02, 0.065, true],
+      [4120, 0.24, 0.055, 0.07, false],
+      [5240, 0.15, 0.09, 0.05, false],
+      [3640, 0.28, 0.14, 0.055, true],
+      [4760, 0.21, 0.19, 0.04, false],
+      [5120, 0.16, 0.24, 0.032, false],
+    ];
+    for (const [f, dur, when, v, echo] of pings){
+      this.tone(f*(0.98 + Math.random()*0.04), dur, { vol:v*vol, when, slide:0.96, echo });
+    }
+  },
   bgmNote(){ const scale = [261.63, 293.66, 329.63, 392, 440, 523.25, 587.33, 659.25, 783.99]; const pat = [0,2,4,5, 4,2,3,1, 0,3,5,7, 6,4,2,4]; const f = scale[pat[this.bgmI % pat.length]]; this.bgmI++;
     this.tone(f, 2.4, { type:'triangle', vol:0.07, attack:0.02, echo:true }); if (this.bgmI % 4 === 1) this.tone(f/2, 3.2, { type:'sine', vol:0.06, attack:0.05 }); },
   // 毎フレーム：状況に合わせて各音の大きさを変える

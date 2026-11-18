@@ -116,6 +116,7 @@ export function setupActivities(G){
   const bt = new THREE.CanvasTexture(cv); bt.colorSpace = THREE.SRGBColorSpace;
   const ball = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 7), new THREE.MeshLambertMaterial({ map:bt })); G.scene.add(ball);
   const BR = 0.22, bv = new THREE.Vector3(), HOME_B = [28, -30]; let goalWait = 0, ballDay = -1;
+  G.ball = { mesh:ball, v:bv, r:BR };
   const resetBall = () => { ball.position.set(HOME_B[0], heightAt(...HOME_B) + BR, HOME_B[1]); bv.set(0, 0, 0); };
   resetBall();
   const updateBall = dt => { const st = S(); if (ballDay !== st.day){ ballDay = st.day; resetBall(); } if (goalWait > 0){ goalWait -= dt; if (goalWait <= 0) resetBall(); return; }
