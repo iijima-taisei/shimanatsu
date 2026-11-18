@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>しまなつ</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Yomogi&family=Zen+Maru+Gothic:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="src/ui.css">
+<script type="importmap">
+{"imports":{"three":"./vendor/three/build/three.module.js","three/addons/":"./vendor/three/examples/jsm/"}}
+</script>
+</head>
+<body>
+<canvas id="game" tabindex="0" aria-label="白砂島のゲーム画面"></canvas>
+<div id="fade"></div><div id="flash"></div>
+<div id="hud">
+  <div id="place"></div>
+  <div id="prompt"></div>
+  <div id="toast"></div>
+  <div id="minibox"><canvas id="minimap"></canvas><span>［M］メニュー　［＋−］拡大</span></div>
+</div>
+<div id="dialogue" class="hidden" role="dialog" aria-label="会話"><div id="dname"></div><div id="dtext"></div><div id="dchoices" role="group" aria-label="返事を選ぶ"></div><div id="dnext" aria-hidden="true">▼</div></div>
+<div id="diary" class="hidden"></div>
+<div id="map" class="hidden" role="dialog" aria-label="メニュー"><div class="mappanel"><canvas id="mapcv"></canvas><div class="mapside"><button type="button" id="mapclose" aria-label="とじる">×</button><div class="menutime"><div id="menucal" class="cal"></div><canvas id="menuclock" class="clock"></canvas></div><div id="menuinv"></div><ul id="maplegend"></ul><div class="mapzoom"><button type="button" id="mapplus" aria-label="拡大">＋</button><button type="button" id="mapminus" aria-label="縮小">−</button><button type="button" id="mapme">自分の場所</button><span id="mapzoom"></span></div><p class="maphint">ホイール・＋−で拡大　ドラッグ・WASDで動かす　［M］［Esc］でとじる</p></div></div></div>
+<div id="pause" class="hidden" role="dialog" aria-label="一時停止"><div class="page pausebox"><h2>一時停止中</h2>
+  <table class="binds"><tr><th>調べる・話す</th><td><button type="button" id="bind-interact"></button></td></tr><tr><th>ジャンプ</th><td><button type="button" id="bind-jump"></button></td></tr></table>
+  <fieldset class="drivemode"><legend>視点（V で切りかえ）</legend>
+    <label><input type="radio" name="view" value="third"> 三人称（うしろから見る）</label>
+    <label><input type="radio" name="view" value="first"> 一人称（自分の目で見る。マウスのドラッグで見回す）</label></fieldset>
+  <fieldset class="drivemode"><legend>軽トラ・原付の運転</legend>
+    <label><input type="radio" name="drive" value="easy"> かんたん（W/S アクセルとバック、A/D ハンドル）</label>
+    <label><input type="radio" name="drive" value="manual"> マニュアル（Shift でギアを上げる、Ctrl・C で下げる。R はバック）</label>
+    <label><input type="radio" name="drive" value="radio"> ラジコン（行きたい方向にキーを倒すだけ）</label>
+    <span>どの操作でも、スペースでサイドブレーキ（ドリフト）</span></fieldset>
+  <fieldset class="drivemode" id="llmbox"><legend>AIのセリフ（試験）</legend>
+    <label><input type="checkbox" id="llmon"> 島の人が、その場の様子を見てしゃべったり動いたりする</label>
+    <label><input type="radio" name="llmmodel" value="light"> かるい（gemma3 1B。約550MB、返事が速い。ときどき言葉が崩れる）</label>
+    <label><input type="radio" name="llmmodel" value="smart"> かしこい（gemma 4 E2B。約2.7GB、自然でその場の様子をよく拾う。GPUのメモリを約3.4GB使う）</label>
+    <span id="llminfo"></span></fieldset>
+  <p class="pausehint">ボタンを押してから、割り当てたいキーを押す。会話は、どちらのキーでも送れる。<br>移動 WASD／矢印　走る Shift　視点 Q/R・ドラッグ　地図 M　写真 P　降りる B<br>ゲームパッド：A 調べる　B ジャンプ　X 降りる　Y 地図　RB 写真　START 一時停止</p>
+  <p><button type="button" id="bind-reset">最初の設定に戻す</button>　<button type="button" id="debugbtn">デバッグ</button>　<button type="button" id="resume">つづける（Esc）</button></p></div></div>
+<div id="debug" class="hidden" role="dialog" aria-label="デバッグ"></div>
+<div id="work" class="hidden"><div id="wtitle"></div><div id="wdesc"></div><div id="wbar"><i></i></div><div id="wcount"></div><div id="whint">Eを押して、手を動かす</div></div>
+<div id="title">
+  <div class="tbox">
+    <h1>しまなつ</h1>
+    <p class="sub">― 白砂島、高校二年の夏休み ―</p>
+    <button id="start" disabled>はじめる</button>
+    <button id="continue" class="hidden" disabled>つづきから</button>
+    <p id="savehint" role="status">島の支度をしています……</p>
+    <p class="keys">移動：WASD／矢印　走る：Shift　視点：マウスドラッグ・Q/R<br>話す・調べる：E　ジャンプ：スペース　写真：P　メニュー：M　視点：V　一時停止・設定：Esc<br>自転車・軽トラ：近くでE　降りる：B</p>
+  </div>
+</div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

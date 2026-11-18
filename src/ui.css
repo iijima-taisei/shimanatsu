@@ -1,0 +1,173 @@
+html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:"Zen Maru Gothic","Hiragino Maru Gothic ProN",sans-serif;color:#fff;user-select:none}
+#game{position:fixed;inset:0;width:100%;height:100%;display:block}
+.hidden{display:none!important}
+#fade{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity 1.2s}
+#hud{position:fixed;inset:0;pointer-events:none;text-shadow:0 2px 0 rgba(0,0,0,.55)}
+#place{position:absolute;top:80px;left:26px;font-size:22px;opacity:0;transition:opacity 1s;letter-spacing:.2em}
+#prompt{position:absolute;bottom:22%;left:50%;transform:translateX(-50%);font-size:24px;background:rgba(15,30,55,.7);padding:8px 24px;border-radius:20px;border:2px solid rgba(255,255,255,.7);opacity:0;transition:opacity .2s;white-space:nowrap}
+#toast{position:absolute;top:22%;left:50%;transform:translateX(-50%);font-size:25px;background:rgba(15,30,55,.7);padding:8px 22px;border-radius:6px;opacity:0;transition:opacity .6s;white-space:nowrap}
+#dialogue{position:fixed;inset:0 0 0 auto;width:clamp(230px,26vw,360px);height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto 24px;gap:18px;background:#f5f2e8;color:#292e28;padding:30px 26px 20px;font-size:28px;line-height:1.8;box-sizing:border-box;box-shadow:-5px 0 18px rgba(0,0,0,.18)}
+#dname{font-weight:700;font-size:20px;letter-spacing:.12em;text-align:right;padding-bottom:12px;border-bottom:1px solid #cbcbbd}
+#dname:empty{display:none}
+#dtext{grid-row:2;min-width:0;min-height:0;width:100%;height:100%;writing-mode:vertical-rl;text-orientation:mixed;white-space:pre-wrap;overflow:hidden;line-height:1.8;letter-spacing:.08em;line-break:strict}
+#dtext .tcy{text-combine-upright:all;-webkit-text-combine:horizontal}
+#dnext{grid-row:4;align-self:end;justify-self:start;font-size:16px;line-height:24px;animation:bob 1s infinite}
+@keyframes bob{50%{transform:translateY(4px)}}
+#dchoices{grid-row:3;display:flex;flex-direction:column;gap:5px;min-height:0;max-height:56vh;overflow-y:auto;scrollbar-color:#9ca58d #f5f2e8}
+#dchoices:empty{display:none}
+#dchoices button{font:inherit;font-size:20px;line-height:1.5;color:inherit;text-align:left;background:none;border:1px solid transparent;padding:8px 9px;min-height:44px;flex-shrink:0;border-radius:2px;cursor:pointer;pointer-events:auto;overflow-wrap:anywhere}
+#dchoices button.sel{background:#e2e8d9;color:#293b27}
+#dchoices button:hover:not(:disabled){background:#d2ddc5;color:#223820}
+#dchoices button:disabled{visibility:hidden}
+#diary{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center}
+.page{width:min(780px,92vw);box-sizing:border-box;max-height:92vh;overflow-y:auto;background:#f7f0dc;color:#4a3b2a;font-family:"Yomogi","Zen Maru Gothic",sans-serif;padding:26px 34px 30px;border-radius:4px;box-shadow:0 10px 40px rgba(0,0,0,.6);background-image:repeating-linear-gradient(#f7f0dc 0 43px,#d8cba8 43px 44px);transform:rotate(-.6deg);scrollbar-color:#a89874 #f7f0dc}
+.page h2{margin:0 0 6px;font-size:31px;line-height:44px;font-weight:400}
+.page img{width:100%;height:220px;object-fit:cover;border:6px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3);box-sizing:border-box;display:block;margin:8px 0 12px;background:#9cc}
+.page p{margin:0;font-size:26px;line-height:44px;white-space:pre-wrap}
+.page .hint{font-size:18px;text-align:right;opacity:.6;line-height:44px}
+.diary-nav{display:flex;align-items:center;justify-content:flex-end;gap:10px;opacity:1!important;margin-top:6px;flex-wrap:wrap}
+.diary-nav button{font:inherit;font-size:17px;color:#4a3b2a;background:rgba(255,253,246,.85);border:1px solid #b8a888;border-radius:4px;padding:4px 12px;min-height:36px;cursor:pointer}
+.diary-nav button:hover:not(:disabled){background:#efe4c8}
+.diary-nav button:disabled{opacity:.35;cursor:default}
+.diary-idx{font-size:17px;color:#6a5a42;min-width:4em;text-align:center}
+#title{position:fixed;inset:0;display:flex;align-items:flex-end;justify-content:flex-start;background:linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,20,50,.55))}
+.tbox{margin:0 0 7vh 7vw;text-shadow:0 3px 0 rgba(0,0,0,.4)}
+.tbox h1{font-family:"Yomogi",sans-serif;font-size:96px;margin:0;font-weight:400;letter-spacing:.1em}
+.sub{font-size:24px;margin:0 0 22px;letter-spacing:.2em}
+.tbox button{font:inherit;font-size:22px;font-weight:700;padding:8px 34px;margin-right:12px;border-radius:24px;border:3px solid #fff;background:rgba(255,215,106,.92);color:#3a2a10;cursor:pointer}
+.tbox button:hover:not(:disabled){background:#ffe8a1}
+.tbox button:active:not(:disabled){transform:translateY(2px)}
+.tbox button:disabled{opacity:.55;cursor:wait}
+button:focus-visible{outline:3px solid #fff;outline-offset:5px}
+#dchoices button:focus-visible{outline:2px solid #456144;outline-offset:-2px}
+#game:focus{outline:none}
+#savehint{font-size:18px;line-height:1.8;max-width:36em;margin:14px 0 0}
+.keys{font-size:18px;opacity:.85;line-height:1.8}
+#flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none}
+#minibox{position:absolute;left:22px;bottom:22px;width:240px;margin-left:-22px;text-align:center;font-size:17px;letter-spacing:.08em}
+#minimap{display:block;width:196px;height:196px;border-radius:50%;box-shadow:0 3px 12px rgba(0,0,0,.4);margin-bottom:4px}
+#map{position:fixed;inset:0;background:rgba(12,24,40,.72);display:flex;align-items:center;justify-content:center;z-index:30;cursor:pointer}
+.mappanel{display:flex;gap:26px;align-items:stretch;background:#f5f2e8;color:#292e28;padding:18px;border-radius:6px;box-shadow:0 8px 30px rgba(0,0,0,.45)}
+#mapcv{display:block;height:min(88vh,calc((100vw - 420px)*1.475));aspect-ratio:800/1180;border:1px solid #b9b3a0;border-radius:3px}
+.mapside{width:300px;display:flex;flex-direction:column}
+.mapside h2{margin:6px 0 4px;font-size:34px;letter-spacing:.2em}
+#mapwhen{margin:0 0 18px;font-size:19px;color:#5c6058}
+#maplegend{list-style:none;margin:0;padding:0}
+#maplegend i{display:inline-block;width:20px;height:20px;line-height:20px;border-radius:50%;margin-right:10px;color:#fff;font-style:normal;font-size:15px;font-weight:700;text-align:center;vertical-align:middle;box-sizing:border-box}
+#maplegend i.me{background:#ffd84a;border:3px solid #3a2c10;clip-path:polygon(50% 0,92% 100%,50% 76%,8% 100%);border-radius:0}
+#maplegend i.car{background:#fff;border:3px solid #27323c;border-radius:3px;height:18px}
+#maplegend i.bike{background:#52e0d0;border:3px solid #27323c;border-radius:0;transform:rotate(45deg) scale(.7)}
+.maphint{margin:auto 0 4px;font-size:16px;color:#5c6058;line-height:1.6}
+.mapzoom{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:14px}
+.mapzoom button{font:inherit;font-size:18px;min-width:44px;min-height:40px;border:1px solid #b9b3a0;background:#fffdf6;color:#292e28;border-radius:4px;cursor:pointer;pointer-events:auto}
+.mapzoom button:hover{background:#efe8d4}
+#mapzoom{font-size:16px;color:#5c6058;margin-left:4px}
+#mapcv{cursor:grab;touch-action:none}
+.gauge{position:fixed;left:50%;bottom:18%;transform:translateX(-50%);width:min(440px,86vw);background:rgba(15,30,55,.82);color:#fff;padding:14px 18px 12px;border-radius:8px;text-align:center;z-index:25;font-size:19px}
+.gbar{position:relative;height:22px;margin:10px 0 8px;background:#5a7494;border-radius:11px;overflow:hidden}
+.gzone{position:absolute;left:42%;width:16%;top:0;bottom:0;background:#4fb3a6}
+.gbar b{position:absolute;top:-3px;bottom:-3px;width:6px;margin-left:-3px;background:#ffd84a;border-radius:3px;box-shadow:0 0 6px #ffd84a}
+.ghint{font-size:16px;opacity:.85}
+.ghit .gbar b{background:#fff}
+/* 日めくりとアナログ時計 */
+.cal{position:relative;width:82px;background:#fffdf6;color:#3a2c1c;border-radius:3px 3px 6px 6px;box-shadow:0 3px 10px rgba(0,0,0,.35),0 2px 0 #e4dccb;text-align:center;padding:16px 0 6px;font-family:"Zen Maru Gothic",sans-serif;text-shadow:none}
+.cal-ring{position:absolute;top:4px;left:0;right:0;display:flex;justify-content:center;gap:30px}.cal-ring i{width:8px;height:8px;border-radius:50%;background:#5a4a3a}
+.cal-month{font-size:14px;font-weight:700;background:#d9483b;color:#fff;margin:0 0 2px;letter-spacing:.1em}
+.cal-day{font-size:44px;font-weight:700;line-height:1}.cal-day.sun{color:#d9483b}.cal-day.sat{color:#2f6fb5}
+.cal-week{font-size:13px}.cal-left{font-size:11px;color:#7a6a58;margin-top:2px}
+.cal.flip{animation:calflip .7s ease-out}
+@keyframes calflip{0%{transform:perspective(300px) rotateX(0)}40%{transform:perspective(300px) rotateX(-70deg);opacity:.4}100%{transform:perspective(300px) rotateX(0);opacity:1}}
+.clock{width:96px;height:96px;filter:drop-shadow(0 3px 6px rgba(0,0,0,.35))}
+/* メニュー */
+.mapside{position:relative}
+#mapclose{position:absolute;top:-6px;right:-6px;width:44px;height:44px;font-size:26px;line-height:1;border:none;background:none;color:#5c6058;cursor:pointer}
+#mapclose:hover{color:#292e28}
+.menutime{display:flex;align-items:flex-end;gap:12px;margin:2px 0 10px}
+.menutime .clock{width:88px;height:88px}
+.mhead{font-size:14px;color:#7a6a58;margin:10px 0 4px;letter-spacing:.1em}
+.prep{display:flex;gap:4px}.prep img{width:44px;height:44px}
+.prep img.off,.irow img.off{opacity:.18;filter:grayscale(1)}
+.prep img.next{opacity:.45;filter:none;outline:2px dashed #c9a46a;outline-offset:-2px;border-radius:6px}
+.invgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.inv{position:relative;background:#fffdf6;border:1px solid #e0d8c4;border-radius:6px;height:56px;display:flex;align-items:center;justify-content:center}
+.inv img{width:44px;height:44px}
+.inv b{position:absolute;right:4px;bottom:1px;font-size:15px;color:#3a2c1c;text-shadow:0 0 3px #fff,0 0 3px #fff}
+.inv.tool{cursor:pointer}.inv.on{box-shadow:0 0 0 2px #f0b84a inset}.inv b{font-size:13px}
+.inv.ready{border-color:#4fb3a6;box-shadow:0 0 0 2px #4fb3a6 inset}
+.irow{display:flex;flex-wrap:wrap;gap:2px}.irow img{width:26px;height:26px}
+.goalbar{height:12px;background:#e6dfcd;border-radius:6px;overflow:hidden}.goalbar i{display:block;height:100%;background:linear-gradient(90deg,#f0b84a,#4fb3a6)}
+.menutags{font-size:14px;color:#4a3b2a;line-height:1.6}
+.menudir{margin:10px 0 0}.menudir button{font:inherit;font-size:15px;padding:5px 12px;border:1px solid #b9b3a0;background:#fffdf6;color:#292e28;border-radius:4px;cursor:pointer;width:100%}.menudir button:hover{background:#efe8d4}
+#maplegend{display:flex;flex-wrap:wrap;gap:0 10px;font-size:15px;line-height:1.9;margin-top:10px!important}
+#debug{position:fixed;inset:0;background:rgba(12,24,40,.6);display:flex;align-items:center;justify-content:center;z-index:45}
+.dbg{background-image:none;transform:none;font-family:"Zen Maru Gothic",sans-serif;background:#f5f2e8;color:#292e28;width:min(860px,94vw);font-size:16px;line-height:1.6}
+.dbg h2{margin:0 0 6px;font-size:26px}.dbg h3{margin:12px 0 4px;font-size:16px;color:#7a6a58}
+.dbg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:4px 14px}.dbg-grid label{display:flex;justify-content:space-between;gap:6px;align-items:center}
+.dbg input[type=number]{width:80px;font:inherit}.dbg select,.dbg button{font:inherit;font-size:15px;padding:3px 10px;margin:2px 0;border:1px solid #b9b3a0;background:#fffdf6;border-radius:4px;cursor:pointer}
+.dbg-flags{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));font-size:14px}
+#dbg-json{width:100%;height:160px;font:12px/1.4 ui-monospace,monospace;box-sizing:border-box}
+.dbg p{font-size:16px;line-height:1.6}
+#banner{position:fixed;left:50%;top:30%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;z-index:28;color:#fff;font-family:"Zen Maru Gothic",sans-serif;text-shadow:0 3px 0 #b8481e,0 0 18px rgba(255,170,60,.8)}
+#banner b{display:block;white-space:nowrap;font-size:clamp(34px,7vw,100px);letter-spacing:.06em;line-height:1.1}
+#banner i{display:block;font-style:normal;font-size:clamp(18px,3vw,30px);margin-top:6px;text-shadow:0 2px 0 rgba(0,0,0,.5)}
+#banner.trick b{font-size:clamp(32px,6vw,70px);text-shadow:0 3px 0 #2f6fb5,0 0 14px rgba(120,200,255,.8)}
+#banner.pop{animation:bannerpop 2.6s ease-out forwards}
+@keyframes bannerpop{0%{transform:translate(-50%,-50%) scale(.2) rotate(-8deg);opacity:0}12%{transform:translate(-50%,-50%) scale(1.15) rotate(2deg);opacity:1}20%{transform:translate(-50%,-50%) scale(1) rotate(0)}80%{opacity:1}100%{transform:translate(-50%,-60%) scale(1);opacity:0}}
+#pause{position:fixed;inset:0;background:rgba(12,24,40,.6);display:flex;align-items:center;justify-content:center;z-index:40}
+.pausebox{background-image:none;transform:none;font-family:"Zen Maru Gothic",sans-serif;background:#f5f2e8;color:#292e28;padding:26px 32px;border-radius:6px;max-width:640px;font-size:19px;line-height:1.7}
+.pausebox h2{margin:0 0 12px;font-size:30px;letter-spacing:.2em}
+.binds th{text-align:left;font-weight:700;padding:4px 18px 4px 0}
+.pausebox button{font:inherit;font-size:18px;min-height:42px;padding:4px 16px;border:1px solid #b9b3a0;background:#fffdf6;color:#292e28;border-radius:4px;cursor:pointer}
+.pausebox button:hover,.pausebox button:focus-visible{background:#efe8d4}
+#pause .pausebox p{font-size:17px;line-height:1.7;margin:10px 0}
+#pause .pausebox p.pausehint{font-size:15px;color:#5c6058}
+#pause .binds{font-size:19px}
+.drivemode{border:1px solid #c9c2ac;border-radius:6px;margin:12px 0;padding:6px 14px 10px;font-size:16px;line-height:1.9}.drivemode legend{font-weight:700;padding:0 6px}.drivemode label{display:block;cursor:pointer}.drivemode span{font-size:14px;color:#7a6a58}
+@media(max-width:600px){
+  #minibox{left:12px;bottom:14px;width:124px;font-size:13px}
+  #minimap{width:124px;height:124px}
+  .mappanel{flex-direction:column;gap:8px;padding:10px}
+  #mapcv{height:auto;width:min(86vw,58vh)}
+  .mapside{width:auto}.mapside h2{font-size:22px;margin:0}#mapwhen{margin:0 0 4px;font-size:14px}
+  #maplegend{font-size:14px;display:flex;flex-wrap:wrap;gap:0 12px}.maphint{font-size:13px}
+  .tbox{margin:0 6vw 5vh;max-width:88vw}
+  .tbox h1{font-size:72px}
+  .sub{font-size:15px;letter-spacing:.1em}
+  .tbox button{font-size:18px;padding:8px 22px;margin:0 8px 8px 0}
+  #savehint,.keys{font-size:14px}
+  #place{top:62px;left:16px;font-size:16px}
+  #prompt{font-size:18px;max-width:88vw;white-space:normal;box-sizing:border-box;text-align:center}
+  #toast{font-size:18px;max-width:88vw;white-space:normal;box-sizing:border-box;text-align:center}
+  #dialogue{width:clamp(148px,43vw,190px);padding:22px 14px 16px;font-size:22px;gap:14px}
+  #dname{font-size:14px;padding-bottom:9px}
+  #dchoices button{font-size:14px;padding:8px 5px}
+  .page{padding:18px 20px}
+  .page h2{font-size:22px}
+  .page p{font-size:21px}
+  .page img{height:180px}
+}
+@media(max-height:550px){
+  #dialogue{padding-top:16px;padding-bottom:12px;gap:10px;font-size:19px}
+  #dname{font-size:14px;padding-bottom:7px}
+  #dchoices{gap:2px;max-height:58vh}
+  #dchoices button{font-size:14px;padding-top:5px;padding-bottom:5px}
+}
+@media(prefers-reduced-motion:reduce){
+  #dnext{animation:none}
+  .tbox button:active:not(:disabled){transform:none}
+}
+
+/* 文化祭の準備：いま何の作業をしているかを出す */
+#work{position:fixed;top:5vh;left:50%;transform:translateX(-50%);width:min(620px,86vw);box-sizing:border-box;background:#f5f2e8;color:#292e28;padding:18px 26px 16px;border-radius:6px;box-shadow:0 6px 0 rgba(0,0,0,.25);text-align:center;pointer-events:none}
+#wtitle{font-size:30px;font-weight:700;letter-spacing:.1em}
+#wdesc{font-size:22px;line-height:1.6;margin:6px 0 12px}
+#wbar{height:18px;background:#d9d5c6;border-radius:9px;overflow:hidden}
+#wbar i{display:block;height:100%;width:0;background:#e0913f;transition:width .25s}
+#wcount{font-size:24px;font-weight:700;margin-top:8px}
+#whint{font-size:19px;opacity:.7;margin-top:4px}
+
+/* AIのひとりごとの吹き出し（npcai.js が頭の上に合わせる） */
+.bubble{position:fixed;transform:translate(-50%,-100%);width:max-content;max-width:min(15em,80vw);padding:5px 11px;border-radius:12px;background:rgba(255,253,244,.93);color:#2c2a26;font-size:15px;line-height:1.4;pointer-events:none;opacity:0;transition:opacity .4s;z-index:5;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+.bubble.show{opacity:1}
+.bubble::after{content:'';position:absolute;left:50%;bottom:-7px;transform:translateX(-50%);border:7px solid transparent;border-top-color:rgba(255,253,244,.93);border-bottom:0}
+.bubble small{display:block;font-size:11px;color:#8a7a5a;line-height:1.2}

@@ -1,0 +1,26 @@
+<!doctype html><meta charset="utf-8"><title>LLM test</title>
+<pre id="o" style="white-space:pre-wrap;font:14px sans-serif"></pre>
+<script type="module">
+// 試験用：?m=モデルID で、同じお題を何本か作って、速さと日本語の出来を見る
+import { CreateWebWorkerMLCEngine } from '../vendor/web-llm/web-llm.js';
+const o = document.getElementById('o'), log = s => { o.textContent += s + '\n'; };
+const model = new URLSearchParams(location.search).get('m') || 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC';
+window.result = { model, lines:[], done:false };
+const t0 = performance.now();
+const eng = await CreateWebWorkerMLCEngine(new Worker(new URL('../src/llm-worker.js', import.meta.url), { type:'module' }), model, { initProgressCallback: p => { window.result.progress = p.text; } });
+log(model + ' load ' + ((performance.now() - t0)/1000).toFixed(1) + 's');
+const SYS = 'あなたは日本の小さな島を舞台にしたゲームの台本作家です。指定された人物が、その場で主人公に話しかける短いセリフを日本語で1つだけ書きます。セリフだけを書き、名前やかぎかっこ、説明は書きません。40文字以内。';
+const cases = [
+  ['なぎさ（高校2年の女子。文化祭の実行委員。元気でしっかり者、少し強気。一人称は「あたし」）', ['暑いね。でも、汗かいたあとの麦茶って、なんであんなにおいしいんだろ', '航太、また浜にいるでしょ。準備さぼってるの、知ってるんだから', 'あんた、意外と手先器用なんだね。輪かざり、きれいにできてた'], '夕方。小雨。場所は白砂浜。主人公は自転車に乗っている。'],
+  ['航太（高校2年の男子。サーフィン好きで、口が悪いが気のいいやつ。一人称は「おれ」）', ['朝イチの波が最高なんだよ。おまえも来いって', '腹へった。なんか持ってねえ？', 'おれ、文化祭の準備はパス……って言ったら、なぎさに殺されるよな'], '昼。快晴でとても暑い。場所は港。主人公はさっき軽トラで航太をはね飛ばした（航太は無傷）。'],
+  ['ことは（高校2年の女子。無口で絵が好き。話すときは「……」が多い。一人称は「わたし」）', ['……展望台からだと、島の形がよく見えるの', '……この色、海の色にしたいけど、なかなか出せない', '雲の形、毎日ちがうから、毎日描ける'], '朝。晴れ。場所は神社の石段。主人公は麦わら帽子をかぶっている。'],
+  ['しおばあ（島の駄菓子屋のおばあさん。やさしい島ことば。）', ['暑いねえ。ちゃんと水飲んでるかい', 'ラムネは、ビー玉を落としてから飲むんだよ。せっかちはいけない'], '夜。雷雨。場所はしおかぜ商店。主人公はずぶぬれ。'],
+];
+for (const [who, ex, sit] of cases){ for (let k = 0; k < 2; k++){
+  const user = `人物：${who}\nこの人物のセリフの例：\n${ex.map(e => '・' + e).join('\n')}\nいまの状況：${sit}\nこの状況で、この人物が主人公に言うセリフを1つ。`;
+  const t = performance.now();
+  const r = await eng.chat.completions.create({ messages: /gemma/.test(model) ? [{ role:'user', content:SYS + '\n\n' + user }] : [{ role:'system', content:SYS }, { role:'user', content:user }], max_tokens:60, temperature:0.8, top_p:0.9, ...(/Qwen3/.test(model) ? { extra_body:{ enable_thinking:false } } : {}) });
+  const txt = r.choices[0].message.content, toks = r.usage.completion_tokens, sec = (performance.now() - t)/1000;
+  window.result.lines.push({ who:who.slice(0, 4), txt, toks, sec:+sec.toFixed(2), tps:+(toks/sec).toFixed(1) }); log(`${who.slice(0,4)} ${sec.toFixed(2)}s ${toks}tok : ${txt}`); } }
+window.result.done = true; log('done');
+</script>
