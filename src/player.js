@@ -6,7 +6,32 @@ const ROLL = 0.85;   // 前回り受け身の長さ（秒）
 const COYOTE = 0.10;   // 段差から足が離れた直後にジャンプを許容する時間（秒）
 const JUMP_BUF = 0.12;   // 着地前のジャンプ先行入力を保持する時間（秒）
 const FP_EYE = new THREE.Vector3();
-let audio_engine = () => {}; export const setEngine = fn => { audio_engine = fn; };   // 原付のエンジン音（main.js から渡す）   // 受け身で転がる時間（秒）
+const BIKE_BOUNCE_DUR = 0.16;   // 着地クッションの減衰時間（秒）
+let audio_engine = () => {};
+let audio_wind = () => {};
+let audio_skid = () => {};
+let fx_bikePuff = null;
+// 原付のエンジン音（main.js から渡す。既存互換）
+export const setEngine = fn => { audio_engine = fn; };
+// 自転車・原付の走行音・砂ぼこり演出を一括登録する
+export const setBikeAudio = ({ engine, wind, skid, puff } = {}) => {
+  if (engine) audio_engine = engine;
+  if (wind) audio_wind = wind;
+  if (skid) audio_skid = skid;
+  if (puff) fx_bikePuff = puff;
+};
+// 着地時の車体・サドル姿勢の上下バウンス量（0.16秒程度の減衰振動）
+export function computeBikeBounce(t, amp, dur = BIKE_BOUNCE_DUR){
+  if (t <= 0 || t >= dur || amp <= 0) return 0;
+  const u = t / dur;
+  return -amp * 1.55 * Math.sin(u * Math.PI * 1.65) * Math.pow(1 - u, 1.5);
+}
+// 高速からの急減速でブレーキ演出を出すかの判定
+export function shouldBikeBrakeFx(prevSpeed, nextSpeed, dt, { locked = false, air = 0, gh = 0 } = {}){
+  if (locked || air > 0.01 || gh < 0.05 || dt <= 0) return false;
+  const decel = (prevSpeed - nextSpeed) / dt;
+  return prevSpeed >= 6.5 && decel >= 7.5;
+}
 // 足もとの高さ。ふだんは地形（heightAt）、校舎の中では階ごとの床（school.js が setGround で差しかえる）。y はいまの高さ（どの階の床かを選ぶのに使う）
 let ground = (x, z, y) => heightAt(x, z);
 let floor = () => null;
@@ -22,6 +47,7 @@ export class Player {
     this.yaw = 0; this.camYaw = Math.PI; this.camPitch = 0.28; this.camDist = 6.2; this.locked = false; this.swimming = false; this.sitting = false;
     this.camPos = new THREE.Vector3(); this.look = new THREE.Vector3(); this.moved = 0;
     this.riding = null; this.bikeSpeed = 0; this.bikePhase = 0;
+    this.bikeBounceT = 0; this.bikeBounceAmp = 0; this.bikeBrakeCd = 0;
     this.headLook = { yaw: 0, pitch: 0 }; this._headApplied = { yaw: 0, pitch: 0 };
     this.air = 0; this.vy = 0;   // 地面からの高さと上下の速さ（ジャンプ・落下）
     this.coyote = 0; this.jumpBuf = 0; this.jumped = false;
@@ -76,7 +102,7 @@ export class Player {
   // 上下の動き。ground は足元の高さ。着地したら true
   // 上がるときより、落ちるときの重力を強くする（ふわっとせず、着地に手応えが出る）
   fly(dt, ground){ this.vy -= (this.vy > 0 ? 22 : 34)*dt; const y = this.pos.y + this.vy*dt; if (y <= ground){ const hard = this.vy; this.air = 0; this.vy = 0; this.pos.y = ground; this.landSpeed = -hard; this.landed = -hard; return true; } this.pos.y = y; this.air = y - ground; return false; }
-  teleport(x, z, yaw=0, yHint=999){ this.air = 0; this.vy = 0; this.coyote = 0; this.jumpBuf = 0; this.jumped = false; this.carry = null; this.clearHeadLook(); this.headLook.yaw = 0; this.headLook.pitch = 0; if (this.driving) this.exitCar(true); if (this.riding) this.dismountBike(true); this.pos.set(x, this.room ? this.room.y : gAt(yHint, x, z), z); this.yaw = yaw; this.camYaw = yaw + Math.PI; this.snap = true; }
+  teleport(x, z, yaw=0, yHint=999){ this.air = 0; this.vy = 0; this.coyote = 0; this.jumpBuf = 0; this.jumped = false; this.carry = null; this.bikeBounceT = 0; this.bikeBounceAmp = 0; this.bikeBrakeCd = 0; this.clearHeadLook(); this.headLook.yaw = 0; this.headLook.pitch = 0; if (this.driving) this.exitCar(true); if (this.riding) this.dismountBike(true); if (this.ch?.base) this.ch.base.position.y = 0; this.pos.set(x, this.room ? this.room.y : gAt(yHint, x, z), z); this.yaw = yaw; this.camYaw = yaw + Math.PI; this.snap = true; }
   // どれだけ深く物に重なっているか（0なら当たっていない）。軽トラが、めりこんだ状態から抜け出せるようにするために使う
   depthAt(x, z, radius=0.35){ let m = 0;
     for (const c of this.col){ if (c.off || (c.y1 !== undefined && (this.pos.y + 0.5 < c.y0 || this.pos.y > c.y1))) continue; let d;   // 校舎の壁は、その階にいるときだけ
@@ -108,6 +134,7 @@ export class Player {
     const yaw=bike.mesh.rotation.y+Math.PI/2, x=bike.mesh.position.x-Math.sin(yaw)*0.27, z=bike.mesh.position.z-Math.cos(yaw)*0.27;
     if (!this.bikeCanFit(x,z,yaw)) return false;
     this.riding=bike; this.bikeSpeed=0; this.bikePhase=bike.phase||0; this.sitting=false;
+    this.bikeBounceT=0; this.bikeBounceAmp=0; this.bikeBrakeCd=0;
     this.coyote=0; this.jumpBuf=0; this.jumped=false;
     this.pos.set(x,gAt(this.pos.y, x,z),z); this.yaw=yaw; this.camYaw=yaw+Math.PI;
     this.bikeCamDist=this.camDist; this.camDist=7.4; this.camPitch=Math.max(0.15,this.camPitch); this.snap=true;
@@ -127,20 +154,24 @@ export class Player {
       }
       if (!point) return false;
     }
+    audio_wind(0,false);
     if (this.riding.kind==='moped') audio_engine(0,false);   // 原付のエンジンを止める
+    this.bikeBounceT=0; this.bikeBounceAmp=0; this.bikeBrakeCd=0;
+    if (this.ch?.base) this.ch.base.position.y=0;
     this.syncBike(); this.riding.phase=this.bikePhase; this.riding=null; this.bikeSpeed=0;
     if (point) this.pos.set(point.x,point.y,point.z);
     this.camDist=this.bikeCamDist??6.2; this.moving=false; this.running=false; this.ch.set('idle'); return true;
   }
-  syncBike(){
+  syncBike(bounceY = 0){
     const bike=this.riding; if (!bike) return;
     const sx=Math.sin(this.yaw), sz=Math.cos(this.yaw), x=this.pos.x+sx*0.27, z=this.pos.z+sz*0.27;
     const front=gAt(this.pos.y, x+sx*0.52,z+sz*0.52), rear=gAt(this.pos.y, x-sx*0.52,z-sz*0.52);
-    bike.mesh.position.set(x,(front+rear)/2+this.air,z); bike.mesh.rotation.set(0,this.yaw-Math.PI/2,Math.atan2(front-rear,1.04),'YXZ'); bike.mesh.visible=true;
+    bike.mesh.position.set(x,(front+rear)/2+this.air+bounceY*0.85,z); bike.mesh.rotation.set(0,this.yaw-Math.PI/2,Math.atan2(front-rear,1.04),'YXZ'); bike.mesh.visible=true;
     if (bike.crank) bike.crank.rotation.z=-this.bikePhase;
   }
   updateBike(dt,mx,mz){
     const len=Math.hypot(mx,mz), moped=this.riding.kind==='moped';
+    const prevSpeed=this.bikeSpeed;
     // 原付は自転車より速い（ペダルはこがない）。マニュアルでは Shift/Ctrl で1〜4速を変え、W でアクセル、A/D でハンドル
     const top=Math.min(moped ? (SETTINGS.drive==='manual' ? 19 : keys.ShiftLeft||keys.ShiftRight ? 19 : 16) : keys.ShiftLeft||keys.ShiftRight ? 13.5 : 10.5,this.bikeSpeedLimit??Infinity);
     if (this.locked) this.bikeSpeed=0;
@@ -150,16 +181,37 @@ export class Player {
       this.bikeSpeed=Math.min(this.bikeSpeed,top); this.rpm=this.bikeSpeed/G2.max[g];
       if (Math.abs(mx)>0.1 && this.bikeSpeed>0.5){ const next=this.yaw-mx*dt*2.1*Math.min(1,this.bikeSpeed/4); if (this.bikeCanFit(this.pos.x,this.pos.z,next)) this.yaw=next; } }
     else {
-      const target=len>0.01 ? top : 0, rate=target>this.bikeSpeed ? (moped ? 9 : 7.5) : 5.0;
-      this.bikeSpeed+=THREE.MathUtils.clamp(target-this.bikeSpeed,-rate*dt,rate*dt);
+      const target=len>0.01 ? top : 0;
+      let braking=false;
       if (len>0.01){
         const fx=-Math.sin(this.camYaw), fz=-Math.cos(this.camYaw), dx=(fx*mz-fz*mx)/len, dz=(fz*mz+fx*mx)/len;
         const angle=Math.atan2(Math.sin(Math.atan2(dx,dz)-this.yaw),Math.cos(Math.atan2(dx,dz)-this.yaw));
-        const turn=THREE.MathUtils.clamp(angle,-dt*2.3,dt*2.3), next=this.yaw+turn;
-        if (this.bikeCanFit(this.pos.x,this.pos.z,next)) this.yaw=next;
-        // 大きく向きを変える間は速度を落とし、狭い道でも扱いやすくする。
-        if (Math.abs(angle)>1.0) this.bikeSpeed=Math.min(this.bikeSpeed,4.5);
+        // 高速走行中に逆向き入力された場合は、即座に旋回せずブレーキで急減速させる
+        if (Math.abs(angle)>2.35 && this.bikeSpeed>4.5){
+          braking=true;
+          this.bikeSpeed=Math.max(0,this.bikeSpeed-15*dt);
+        } else {
+          const turn=THREE.MathUtils.clamp(angle,-dt*2.3,dt*2.3), next=this.yaw+turn;
+          if (this.bikeCanFit(this.pos.x,this.pos.z,next)) this.yaw=next;
+          // 大きく向きを変える間は速度を落とし、狭い道でも扱いやすくする。
+          if (Math.abs(angle)>1.0) this.bikeSpeed=Math.min(this.bikeSpeed,4.5);
+        }
       }
+      if (!braking){
+        const rate=target>this.bikeSpeed ? (moped ? 9 : 7.5) : 5.0;
+        this.bikeSpeed+=THREE.MathUtils.clamp(target-this.bikeSpeed,-rate*dt,rate*dt);
+      }
+    }
+    // 高速からの急減速時は軽いタイヤ擦過音と後輪足元の小さな砂ぼこりを出す
+    const ghBefore=gAt(this.pos.y,this.pos.x,this.pos.z);
+    if (this.bikeBrakeCd>0) this.bikeBrakeCd=Math.max(0,this.bikeBrakeCd-dt);
+    if (shouldBikeBrakeFx(prevSpeed,this.bikeSpeed,dt,{ locked:this.locked, air:this.air, gh:ghBefore }) && this.bikeBrakeCd<=0){
+      this.bikeBrakeCd=0.11;
+      const surf=this.surface(this.pos.x,this.pos.z,this.pos.y);
+      audio_skid(surf,prevSpeed);
+      const rx=this.pos.x-Math.sin(this.yaw)*0.25, rz=this.pos.z-Math.cos(this.yaw)*0.25, ry=gAt(this.pos.y,rx,rz);
+      if (fx_bikePuff) fx_bikePuff(rx,ry,rz,surf);
+      else if (typeof window!=='undefined' && window.G?.puff) window.G.puff(rx,ry,rz,0.42,{ size:2.6, opacity:0.55, up:0.65 });
     }
     const distance=this.bikeSpeed*dt, steps=Math.max(1,Math.ceil(distance/0.18)), step=distance/steps; let moved=0;
     for (let i=0;i<steps && step>0;i++){
@@ -176,18 +228,41 @@ export class Player {
     }
     this.moved+=moved; this.moving=moved>0.0001; this.running=false; this.swimming=false;
     { const gh=gAt(this.pos.y, this.pos.x,this.pos.z);
-      if (this.air>0 || this.vy>0){ this.bikeTop=Math.max(this.bikeTop??this.pos.y,this.pos.y); if (this.fly(dt,gh)){ const drop=this.bikeTop-gh; this.bikeTop=null; if (drop>2) this.bikeTrick=drop; } }
+      if (this.air>0 || this.vy>0){
+        this.bikeTop=Math.max(this.bikeTop??this.pos.y,this.pos.y);
+        if (this.fly(dt,gh)){
+          const drop=this.bikeTop-gh; this.bikeTop=null; if (drop>2) this.bikeTrick=drop;
+          if (gh>=-0.75 && this.landSpeed>2.2){
+            this.bikeBounceT=0.0001;
+            this.bikeBounceAmp=THREE.MathUtils.clamp(this.landSpeed*0.0075,0.025,0.08);
+          }
+        }
+      }
       else if (gh<this.pos.y-0.5 && this.bikeSpeed>4){ this.vy=Math.max(0,this.bikeClimb||0); this.air=0.01; this.bikeTop=this.pos.y; }   // 坂の頂上や段差から、勢いのまま飛び出す
       else { const y0=this.pos.y; this.pos.y+=(gh-this.pos.y)*Math.min(1,dt*16); this.bikeClimb=(this.pos.y-y0)/Math.max(dt,1e-3); }
       if (gh<0.1) this.bikeSpeed=Math.min(this.bikeSpeed,4.6);          // 水の中は重い
       if (gh<-0.75 && this.air<=0){ this.bikeDive=true; this.dismountBike(true); this.swimming=true; return; } }   // 深みに入ったら、そのまま泳ぐ
+    let bounceY=0;
+    if (this.bikeBounceT>0){
+      this.bikeBounceT+=dt;
+      if (this.bikeBounceT>=BIKE_BOUNCE_DUR){ this.bikeBounceT=0; this.bikeBounceAmp=0; }
+      else bounceY=computeBikeBounce(this.bikeBounceT,this.bikeBounceAmp,BIKE_BOUNCE_DUR);
+    }
     this.root.rotation.y=this.yaw;
     this.root.rotation.z=0; this.ch.shadow.visible=true;
     for (const wheel of this.riding.wheels||[]) wheel.rotation.z-=moved/0.33;
     if (len>0.01 && !moped) this.bikePhase+=moved/(0.33*2.4);   // 原付はペダルをこがない
-    if (moped) audio_engine(SETTINGS.drive==='manual' ? 3+Math.min(1.1,this.rpm||0)*13 : this.bikeSpeed*0.9);
+    if (this.locked){
+      audio_wind(0,false);
+      if (moped) audio_engine(0,false);
+    } else {
+      audio_wind(this.bikeSpeed,true);
+      if (moped) audio_engine(this.bikeSpeed,true,{ manual:SETTINGS.drive==='manual', gear:this.gear, rpm:this.rpm });
+    }
     this.clearHeadLook();
-    this.ch.cyclePhase=this.bikePhase; this.ch.set('cycle'); this.ch.update(dt); this.syncBike();
+    this.ch.cyclePhase=this.bikePhase; this.ch.set('cycle'); this.ch.update(dt);
+    if (this.ch?.base) this.ch.base.position.y=bounceY;
+    this.syncBike(bounceY);
     if (!this.camOverride) this.updateCam(dt);
   }
   update(dt){

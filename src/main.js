@@ -23,7 +23,7 @@ import { setupFun } from './fun.js';
 import { setupPhysics } from './physics.js';
 import { setupItems } from './items.js';
 import { BIND, DEFAULT, saveBind, keyName, pollPad, SETTINGS, saveSettings, gearName } from './keys.js';
-import { setEngine } from './player.js';
+import { setBikeAudio } from './player.js';
 import { skipDialogue } from './dialogue.js';
 import { pickInteractTarget } from './interact.js';
 import { DATES, BIKE, PREP_TASKS, NAMES, FARE } from '../data/story.js';
@@ -55,7 +55,15 @@ G.npcs.sister = new NPC('sister', scene, { model:'sister', girl:true });
 G.npcs.granny = new NPC('granny', scene, { model:'granny', girl:true });
 G.fireworks = new Fireworks(scene);
 G.names = NAMES; G.roadPts = ROAD_PTS; G.roadIndex = Object.fromEntries(ROADS.map((r, i) => [r.id, i]));
-setEngine((v, on = true) => audio.engine(v, on));
+setBikeAudio({
+  engine: (v, on = true, opt) => audio.mopedEngine(v, on, opt),
+  wind: (v, on = true) => audio.rideWind(v, on),
+  skid: (surf, sp) => audio.bikeSkid(surf, sp),
+  puff: (x, y, z, surf) => {
+    const st = PUFF_STYLE[surf] || PUFF_STYLE.dirt;
+    G.puff(x, y, z, 0.42*st.scale, { color:st.color, size:Math.max(2.2, st.size*0.68), opacity:st.opacity*0.72, up:0.65 });
+  },
+});
 setupGame(G); setupActivities(G); setupCars(G); const map = G.map = setupMap(G); setupHud(G); setupDebug(G); setupWeather(G); setupKnock(G); setupBubbles(G); setupNpcAI(G); setupPhysics(G); setupSchool(G); setupFun(G); setupItems(G); setTick(() => audio.blip());
 player.fields = W.fields;
 player.teleport(HOME.x, HOME.z + 5.5, 0);
@@ -135,7 +143,7 @@ dlg.onConfirm = code => { if (G.paused || G.mapOpen) return; if (G.mode !== 'pla
   if (code !== BIND.jump){ if (target){ const t = target; audio.select(); G.run(t.act); } else if (!player.driving && !player.riding && G.time > mutterAt){ mutterAt = G.time + 1.2; audio.tone(520, 0.05, { vol:0.03 }); G.api.toast(MUTTER[mutterN++ % MUTTER.length], 1500); } }
   else if (player.jump()){ player.jumped = false; audio.tone(300, 0.16, { type:'triangle', vol:0.07, slide:1.9 }); } };
 
-let last = performance.now(), lastMoved = 0;
+let last = performance.now(), lastMoved = 0, wasRiding = false;
 const tmp = new THREE.Vector3();
 let dialogueWidth = -1, viewWidth = 0, viewHeight = 0;
 // 会話帯を除いた場所の中央に主人公を映す。移動中のカメラ角度は変えない。
@@ -159,7 +167,10 @@ function tick(dt){
   if (G.mode === 'play' && !dlg.busy && !G.lock && !G.timeStop && !G.mapOpen && !G.paused) S.hour += dt/40*(window.TS || 1);
   player.locked = G.mode !== 'play' || dlg.busy || G.lock || !!G.mapOpen || !!G.paused;   // 地図を開いている間は、時間も動きも止まる
   player.bikeSpeedLimit = G.companion ? 7.8 : Infinity;
-  G.schoolUpdate(dt); G.carsUpdate(dt); player.update(dt); G.knockUpdate(dt); G.bikesFlyUpdate(dt); G.physicsUpdate(dt); if (G.world && G.world.moving) G.world.moving(dt); G.npcai.update(dt); G.bubbleUpdate(dt); frameDialogue(); for (const k in G.npcs) G.npcs[k].update(dt, G);
+  G.schoolUpdate(dt); G.carsUpdate(dt); player.update(dt);
+  if (wasRiding && (!player.riding || player.frozen)){ audio.rideWind(0, false); audio.mopedEngine(0, false); }
+  wasRiding = !!player.riding && !player.frozen;
+  G.knockUpdate(dt); G.bikesFlyUpdate(dt); G.physicsUpdate(dt); if (G.world && G.world.moving) G.world.moving(dt); G.npcai.update(dt); G.bubbleUpdate(dt); frameDialogue(); for (const k in G.npcs) G.npcs[k].update(dt, G);
   sea.update(G.time); W.update(G.time); sky.update(Math.min(S.hour, 23.9), player.pos, dt, camera); G.weather.update(dt, sky, player);
   { const nk = G.blackout ? 0 : Math.max(0, Math.min(1, (Math.min(S.hour, 23.9) - 17.9)/1.2 + G.weatherNow.cloud*0.35)); setNight(nk); W.setNight(nk); }
   G.fireworks.update(dt, G.time); if (G.fireworks.flash > 0){ sky.hemi.intensity += G.fireworks.flash*0.9; sky.hemi.color.lerp(G.fireworks.col, G.fireworks.flash*0.5); }

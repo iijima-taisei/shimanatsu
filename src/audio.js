@@ -2,6 +2,44 @@
 let ctx = null, master, noiseBuf; const L = {};
 function noise(){ const b = ctx.createBufferSource(); b.buffer = noiseBuf; b.loop = true; b.start(); return b; }
 function gainTo(g, v, t=0.8){ g.gain.setTargetAtTime(v, ctx.currentTime, t); }
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+// 自転車・原付の風切り音パラメータ計算（速度に応じて立ち上がり、停止・消音時はゼロへ）
+export function computeRideWindParams(v, on = true){
+  const active = !!on && v > 5.5;
+  if (!active) return { active:false, gain:0, freq:280, q:0.85 };
+  const u = Math.min(1.15, (v - 5.5) / 13.5);
+  const smooth = u >= 1 ? 1 + (u - 1) * 0.25 : u * u * (3 - 2 * u);
+  return {
+    active: true,
+    gain: 0.072 * smooth,
+    freq: 280 + u * 920,
+    q: 0.85 + Math.min(1, u) * 0.55,
+  };
+}
+// 原付エンジン音パラメータ計算（速度とギア相当の段階から回転数・ピッチを決める）
+export function computeMopedEngineParams(v, on = true, opt = {}){
+  if (!on) return { active:false, gain:0, freq:56, cutoff:420, gear:1, rpm:0 };
+  const speed = Math.max(0, v || 0);
+  let gear = 1, rpm = 0;
+  if (opt.manual){
+    gear = clamp(Math.round(opt.gear || 1), 1, 4);
+    rpm = clamp(opt.rpm ?? 0, 0, 1.15);
+  } else {
+    const stages = [[1, 0, 5.2], [2, 2.6, 9.6], [3, 5.8, 14.2], [4, 9.2, 19.0]];
+    const idx = speed < 5.2 ? 0 : speed < 9.6 ? 1 : speed < 14.2 ? 2 : 3;
+    const [g, lo, hi] = stages[idx];
+    gear = g;
+    rpm = speed < 0.2 ? 0 : clamp((speed - lo) / (hi - lo), 0.22, 1.1);
+  }
+  return {
+    active: true,
+    gain: 0.024 + Math.min(1, rpm) * 0.036,
+    freq: 56 + rpm * 88 + (gear - 1) * 5,
+    cutoff: 420 + rpm * 780 + (gear - 1) * 40,
+    gear,
+    rpm,
+  };
+}
 // 地面材質ごとの足音・着地音パラメータ（日常動作の邪魔にならないよう差は控えめ）
 const SURF_STEP = {
   sand:    { dur:0.095, freq:1950, vol:0.044, type:'bandpass' },
@@ -46,6 +84,53 @@ export const audio = {
   burst(dur, freq, vol, { when=0, type='lowpass', echo=false }={}){ if (!ctx) return; const t = ctx.currentTime + when; const n = ctx.createBufferSource(); n.buffer = noiseBuf; const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; const g = ctx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0005, t+dur); n.connect(f); f.connect(g); g.connect(master); if (echo) g.connect(L.echo); n.start(t, Math.random()); n.stop(t+dur+0.05); },
   engine(v, on){ if (!ctx) return; if (!L.eng){ const o = ctx.createOscillator(); o.type = 'sawtooth'; const o2 = ctx.createOscillator(); o2.type = 'square'; const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 420; const g = ctx.createGain(); g.gain.value = 0; o.connect(f); o2.connect(f); f.connect(g); g.connect(master); o.start(); o2.start(); L.eng = { o, o2, g }; }
     const fq = 46 + v*7.5; L.eng.o.frequency.setTargetAtTime(fq, ctx.currentTime, 0.08); L.eng.o2.frequency.setTargetAtTime(fq*0.5, ctx.currentTime, 0.08); L.eng.g.gain.setTargetAtTime(on ? 0.035 + Math.min(0.04, v*0.003) : 0, ctx.currentTime, 0.12); },
+  // 原付（moped）専用の合成エンジン音（速度とギア段階に応じた回転数変化）
+  mopedEngine(v, on = true, opt = {}){
+    if (!ctx) return;
+    if (!L.moped){
+      const o = ctx.createOscillator(); o.type = 'sawtooth';
+      const o2 = ctx.createOscillator(); o2.type = 'triangle';
+      const o3 = ctx.createOscillator(); o3.type = 'square';
+      const o3g = ctx.createGain(); o3g.gain.value = 0.18;
+      const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 420;
+      const g = ctx.createGain(); g.gain.value = 0;
+      o.connect(f); o2.connect(f); o3.connect(o3g); o3g.connect(f); f.connect(g); g.connect(master);
+      o.start(); o2.start(); o3.start();
+      L.moped = { o, o2, o3, f, g };
+    }
+    const p = computeMopedEngineParams(v, on, opt);
+    const t = ctx.currentTime;
+    L.moped.o.frequency.setTargetAtTime(p.freq, t, 0.06);
+    L.moped.o2.frequency.setTargetAtTime(p.freq * 0.5, t, 0.06);
+    L.moped.o3.frequency.setTargetAtTime(p.freq * 2.0, t, 0.06);
+    L.moped.f.frequency.setTargetAtTime(p.cutoff, t, 0.07);
+    L.moped.g.gain.setTargetAtTime(p.gain, t, p.active ? 0.06 : 0.02);
+  },
+  // 乗車中の風切り音（ホワイトノイズのバンドパス合成音）
+  rideWind(v, on = true){
+    if (!ctx) return;
+    if (!L.rideWind){
+      const n = noise();
+      const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 280; f.Q.value = 0.85;
+      const g = ctx.createGain(); g.gain.value = 0;
+      n.connect(f); f.connect(g); g.connect(master);
+      L.rideWind = { f, g };
+    }
+    const p = computeRideWindParams(v, on);
+    const t = ctx.currentTime;
+    L.rideWind.f.frequency.setTargetAtTime(p.freq, t, 0.08);
+    L.rideWind.f.Q.setTargetAtTime(p.q, t, 0.08);
+    L.rideWind.g.gain.setTargetAtTime(p.gain, t, p.active ? 0.09 : 0.015);
+  },
+  // 自転車・原付の急減速時の軽いタイヤ擦過音
+  bikeSkid(surf = 'road', speed = 8){
+    if (!ctx) return;
+    const hard = surf === 'road' || surf === 'wood';
+    const freq = (hard ? 2250 : 1200) + Math.random() * 280;
+    const dur = hard ? 0.085 : 0.105;
+    const vol = Math.min(0.06, 0.028 + Math.max(0, speed - 6.5) * 0.003) * (hard ? 1 : 1.08);
+    this.burst(dur, freq, vol, { type:'bandpass' });
+  },
   step(swim, surf = 'dirt', indoor = false){
     if (swim === true){ this.burst(0.25, 900, 0.07); return; }
     const k = typeof swim === 'string' ? swim : surf;

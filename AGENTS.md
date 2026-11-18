@@ -319,3 +319,9 @@
 - カニさがし：ゲージ中は audio.crabScuttle と周辺物の微揺れ（finally で角度復元）、成功時は水輪＋砂煙。
 - 友達の反応は G.observe に集約：呼び出しは会話（say/withFriend）が閉じた後にし、クールダウンは5秒。kindReact/npcCool は発話が実際に成立した時点でだけ記録し、同行者（G.companion）を最優先に選ぶ。OBSERVE には fish/skip/bug を追加。カニの observe は従来の30m範囲（PERSONA 持ち含む）を維持すること。
 - 水輪エフェクトは activities.js の ripple（THREE.LineLoop、三角形0、寿命で dispose）。
+
+## 自転車・原付の疾走フィール（2026-11-18）
+- 乗車中の風切り音（audio.rideWind / computeRideWindParams）：bikeSpeed 5.5 超から smoothstep で立ち上がるホワイトノイズ＋バンドパス合成。速度で音量・中心周波数・Qが変化し、停止・降車・会話ロック・フリーズ・深みでの泳ぎ切り替えでは短い時定数で即消音する。
+- 原付のエンジン音（audio.mopedEngine）：kind が 'moped' のときだけ鳴る（自転車では発火しない）。オートマは速度域の4段ギア相当、マニュアルは gear / rpm に応じてピッチとローパスが変速的に変化する。
+- ブレーキ演出：高速からの急減速を shouldBikeBrakeFx（prevSpeed >= 6.5 かつ減速率 >= 7.5、空中・水際・ロック時を除外、クールダウン付き）で判定し、地面材質に応じた擦過音 audio.bikeSkid と後輪足元（後方0.25m）の小さな G.puff を出す。
+- 着地クッション：着地時に 0.16 秒の減衰振動（computeBikeBounce、最大振幅 0.08m）を車体とサドル姿勢に適用する。降車・teleport 時は即 0 に復帰する。
