@@ -178,7 +178,8 @@ export function buildWorld(G){
   // ---- 港 ----
   put('pier', -256, 70, 0, { y:0.6 }); PLATFORMS.push({ x:-256, z:70, w:46, d:6, top:1.62 });
   colliders.push({ x:-256, z:67.1, w:46, d:0.5, h:0.55 });   // 桟橋北側の車止め
-  const lhMesh = put('lighthouse', -275, 70, 0, { y:1.6, r:1.4 });
+  for (let i = 0; i < 6; i++) colliders.push({ x:-276 + i*8, z:72.4, r:0.22, h:0.5 });   // 桟橋南側の係船柱
+  const lhMesh = put('lighthouse', -275, 70, 0, { y:1.6, r:1.9 });
   let lhLampMat = null; lhMesh.traverse(o => { if (o.isMesh && o.material && o.material.name === 'lh-lamp'){ lhLampMat = o.material = o.material.clone(); lhLampMat.color.setHex(0x9ff5c2); lhLampMat.emissive.setHex(0x3be084); lhLampMat.emissiveIntensity = 0.25; } });
   const lhGlow = (() => {
     const cv = document.createElement('canvas'); cv.width = cv.height = 64; const g = cv.getContext('2d');
@@ -206,8 +207,10 @@ export function buildWorld(G){
     for (const dx of [-2.3, 2.3]) for (const dz of [-2.3, 2.3]) colliders.push({ x:lx + dx, z:lz + dz, r:0.18 });
     colliders.push({ x:lx, z:lz - 2.3, w:4.6, d:0.18, h:1.05 }, { x:lx - 2.3, z:lz, w:0.18, d:4.6, h:1.05 }, { x:lx + 2.3, z:lz, w:0.18, d:4.6, h:1.05 });
   }
-  put('torii', -84, -24, 0); colliders.push({ x:-82.1, z:-24, r:0.3 }, { x:-85.9, z:-24, r:0.3 });
-  put('shrine', -84, -54, 0, { y:15, box:[4.8,4.8] });
+  put('torii', -84, -24, 0);
+  for (const x of [-85.9, -82.1]) colliders.push({ x, z:-24, r:0.2 }, { x, z:-24, r:0.3, h:0.3 });   // 鳥居の柱と亀腹
+  put('shrine', -84, -54, 0, { y:15, box:[4.6, 4.6] });
+  colliders.push({ x:-84, z:-52.31, w:2.2, d:3.38, h:0.3 }, { x:-84, z:-52.485, w:2.2, d:3.03, h:0.6 }, { x:-84, z:-52.66, w:2.2, d:2.68, h:0.9 });   // 神社の石段（北端を社殿内まで延ばし、落下時に手前へ押し出す）
   put('onsen', -182, 30, -Math.PI/2, { y:2.2 }); PLATFORMS.push({ x:-182, z:30, r:7.4, top:2.62 });
   // 石柱の湯の縁（10角形・ジャンプで越えられる）と7本の石柱の当たり判定
   for (let j = 0; j < 10; j++){ const a = j*Math.PI*2/10; colliders.push({ x:-182 + Math.sin(a)*4.2, z:30 + Math.cos(a)*4.2, w:2.85, d:0.7, rot:a, h:0.52 }); }
@@ -232,10 +235,12 @@ export function buildWorld(G){
     const run = new THREE.Mesh(new THREE.PlaneGeometry(A.w - 8, 9).rotateX(-Math.PI/2), new THREE.MeshLambertMaterial({ map:rt, ...po })); run.position.set(A.x, A.h + 0.1, A.rz); scene.add(run);
     const apron = new THREE.Mesh(new THREE.PlaneGeometry(52, 10).rotateX(-Math.PI/2), new THREE.MeshLambertMaterial({ map:tex('concrete'), ...po })); apron.position.set(14, A.h + 0.09, 105.5); scene.add(apron);
     const term = put('terminal', 16, 96, 0, { y:A.h, box:[18, 8] }); term.traverse(o => { if (o.isMesh && o.material.name === 'airport-sign'){ o.material = o.material.clone(); o.material.map = textTex('白砂空港', { w:512, h:64, font:'bold 48px "Zen Maru Gothic", sans-serif', fg:'#ffffff', bg:'#2f6fb5' }); o.material.color.set(0xffffff); } });
+    colliders.push({ x:16, z:96, w:19, d:9, h:0.15 }, { x:13.8, z:102.1, r:0.12 }, { x:18.2, z:102.1, r:0.12 });   // ターミナル基壇と入口ひさしの柱
     W.plane = put('plane', 34, 106.5, 1.25, { y:A.h + 0.1, box:[3, 13] }); W.planeHome = { x:34, y:A.h + 0.1, z:106.5, ry:1.25 }; put('windsock', -52, 106, 0, { y:A.h }); put('windsock', 90, 124, 0, { y:A.h });
     put('bench', -1.5, 102, Math.PI/2, { y:A.h }); put('vending', 3.5, 99.4, 0, { y:A.h, box:[1.1, 0.9] }); putCar(-12, 100, 0.3); put('statue', -12, 94, 1.0, { r:0.8 }); }
   // ---- 浜の入口の白い門 ----
-  { const ry = 0.896, lx = Math.cos(ry), lz = -Math.sin(ry); put('maingate', 65, 26.4, ry); for (const o of [-6.2, -3.6, 3.6, 6.2]) colliders.push({ x:65 + lx*o, z:26.4 + lz*o, r:0.75 }); }
+  { const ry = 0.896, lx = Math.cos(ry), lz = -Math.sin(ry); put('maingate', 65, 26.4, ry);
+    for (const o of [-6.2, -3.6, 3.6, 6.2]){ const cx = 65 + lx*o, cz = 26.4 + lz*o; colliders.push({ x:cx, z:cz, w:1.5, d:1.5, rot:ry, h:0.35 }, { x:cx, z:cz, r:0.5 }); } }
   // ---- 若浦（北の集落）と、東海岸の道ぞい ----
   put('fishrack', 110, -441, 0.4, { box:[3.1, 1.1] }); put('busstop', 133, -421, 0.3); put('vending', 127, -421.5, 0.3, { box:[1.1, 0.9] }); put('statue', 122, -419, 2.6, { r:0.8 }); put('bench', 108, -449, -Math.PI/2);
   putCar(140, -419.5, 1.3); putBike(125, -419.6, 1.9, { dy:0.02 }); putMoped(131, -414.5, 2.2);
