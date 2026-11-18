@@ -351,10 +351,15 @@ export function setupGame(G){
     finally { on = false; P.pose = null; if (c){ c.override = null; c.following = true; } P.camDist = 6.2; G.timeStop = false; }
     st.hour += 0.3; if (c) friend(G.companion, 2); log(c ? `家の前で、${N[G.companion]}と線香花火をした。` : '家の前で、ひとりで線香花火をした。'); }
 
-  // 着地の砂ぼこり
-  G.puff = (x, y, z, k=1) => { const n = 12, g = new THREE.BufferGeometry(), pos = new Float32Array(n*3), vel = []; for (let i = 0; i < n; i++){ const a = i/n*Math.PI*2; pos.set([x, y + 0.05, z], i*3); vel.push([Math.cos(a)*(1.2 + Math.random())*k, 0.4 + Math.random()*0.5, Math.sin(a)*(1.2 + Math.random())*k]); }
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); const m = new THREE.PointsMaterial({ color:0xd9cdb0, size:4, sizeAttenuation:false, transparent:true, opacity:0.8, depthWrite:false }), pts = new THREE.Points(g, m); pts.frustumCulled = false; G.scene.add(pts); let t = 0;
-    fx.push(dt => { t += dt; for (let i = 0; i < n; i++){ pos[i*3] += vel[i][0]*dt; pos[i*3+1] += vel[i][1]*dt; pos[i*3+2] += vel[i][2]*dt; vel[i][0] *= 0.9; vel[i][2] *= 0.9; } g.attributes.position.needsUpdate = true; m.opacity = 0.8*(1 - t/0.4);
+  // 着地の砂ぼこり・水しぶき
+  G.puff = (x, y, z, k=1, opt={}) => {
+    const color = opt.color ?? 0xd9cdb0, size = opt.size ?? 4, baseOp = opt.opacity ?? 0.8, up = opt.up ?? 1;
+    const n = 12, g = new THREE.BufferGeometry(), pos = new Float32Array(n*3), vel = [];
+    for (let i = 0; i < n; i++){ const a = i/n*Math.PI*2; pos.set([x, y + 0.05, z], i*3); vel.push([Math.cos(a)*(1.2 + Math.random())*k, (0.4 + Math.random()*0.5)*up, Math.sin(a)*(1.2 + Math.random())*k]); }
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const m = new THREE.PointsMaterial({ color, size, sizeAttenuation:false, transparent:true, opacity:baseOp, depthWrite:false }), pts = new THREE.Points(g, m);
+    pts.frustumCulled = false; G.scene.add(pts); let t = 0;
+    fx.push(dt => { t += dt; for (let i = 0; i < n; i++){ pos[i*3] += vel[i][0]*dt; pos[i*3+1] += vel[i][1]*dt; pos[i*3+2] += vel[i][2]*dt; vel[i][0] *= 0.9; vel[i][2] *= 0.9; } g.attributes.position.needsUpdate = true; m.opacity = baseOp*(1 - t/0.4);
       if (t > 0.4){ G.scene.remove(pts); g.dispose(); m.dispose(); return false; } }); };
   // 定期便：時刻表どおりに飛行機が島から飛び立つ（遠くからでも見える。乗りたいと思えるように）
   const DEPART = [9 + 10/60, 13 + 25/60, 16 + 40/60]; let depKey = -1;

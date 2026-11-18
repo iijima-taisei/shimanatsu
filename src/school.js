@@ -17,7 +17,7 @@ export const floorIndex = y => y > L.F[2] - 0.6 ? 2 : y > L.F[1] - 0.6 ? 1 : 0;
 export function setupSchool(G){
   const P = G.player, W = G.world, scene = G.scene;
   const groundAt = (x, z, y = 999) => { const f = schoolFloor(x, z, y); return f === null ? heightAt(x, z) : f; };
-  G.groundAt = groundAt; setGround(groundAt);
+  G.groundAt = groundAt; setGround(groundAt, schoolFloor);
   // 上の階を切り取るクリップ平面（現在は 999 で切らないが、ガラス材質にも共有する）
   const cut = new THREE.Plane(new THREE.Vector3(0, -1, 0), 999); G.renderer.localClippingEnabled = true;
   // 窓ガラス：無傷ガラスと破損後の四隅残欠、破片プール用の共有ジオメトリ・材質

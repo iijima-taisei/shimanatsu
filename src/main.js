@@ -56,6 +56,7 @@ G.fireworks = new Fireworks(scene);
 G.names = NAMES; G.roadPts = ROAD_PTS; G.roadIndex = Object.fromEntries(ROADS.map((r, i) => [r.id, i]));
 setEngine((v, on = true) => audio.engine(v, on));
 setupGame(G); setupActivities(G); setupCars(G); const map = G.map = setupMap(G); setupHud(G); setupDebug(G); setupWeather(G); setupKnock(G); setupBubbles(G); setupNpcAI(G); setupPhysics(G); setupSchool(G); setupFun(G); setupItems(G); setTick(() => audio.blip());
+player.fields = W.fields;
 player.teleport(HOME.x, HOME.z + 5.5, 0);
 
 // ---- タイトル ----
@@ -120,10 +121,18 @@ addEventListener('keydown', e => {
 // 調べるキー（E。Enter・Zでも可）：調べる・話す・乗る。ジャンプキー（スペース）：ジャンプ
 // 近くに何もないときに調べるキーを押したら、ひとりごとを返す（押しても何も起きない、をなくす）
 const MUTTER = ['ふう、あつい……', '（なにもない）', '空が高い。', '汗が、あごから落ちた。', '遠くで波の音がする。', '……どこへ行こうかな。'];
+const PUFF_STYLE = {
+  sand:    { color:0xe8dfc4, size:4.2, opacity:0.82, scale:1.15 },
+  road:    { color:0xcac7be, size:3.4, opacity:0.62, scale:0.70 },
+  dirt:    { color:0xd4c6a4, size:4.0, opacity:0.78, scale:1.00 },
+  grass:   { color:0xc2cca8, size:3.8, opacity:0.68, scale:0.85 },
+  wood:    { color:0xd8ccb2, size:3.2, opacity:0.52, scale:0.55 },
+  shallow: { color:0xe8f6fc, size:4.6, opacity:0.86, scale:1.05, up:1.45 },
+};
 let mutterAt = 0, mutterN = 0;
 dlg.onConfirm = code => { if (G.paused || G.mapOpen) return; if (G.mode !== 'play' || G.lock) return;
   if (code !== BIND.jump){ if (target){ const t = target; audio.select(); G.run(t.act); } else if (!player.driving && !player.riding && G.time > mutterAt){ mutterAt = G.time + 1.2; audio.tone(520, 0.05, { vol:0.03 }); G.api.toast(MUTTER[mutterN++ % MUTTER.length], 1500); } }
-  else if (player.jump()){ audio.tone(300, 0.16, { type:'triangle', vol:0.07, slide:1.9 }); } };
+  else if (player.jump()){ player.jumped = false; audio.tone(300, 0.16, { type:'triangle', vol:0.07, slide:1.9 }); } };
 
 let last = performance.now(), lastMoved = 0;
 const tmp = new THREE.Vector3();
@@ -162,9 +171,10 @@ function tick(dt){
   // 画面の表示
   G.hud.update();
   // 音
-  if (player.landed){ const v = player.landed; player.landed = 0; if (v > 4 && !player.swimming && !player.room){ audio.burst(0.07, 420, Math.min(0.22, v*0.022)); G.puff(player.pos.x, player.pos.y, player.pos.z, Math.min(1.5, v/8)); } }
+  if (player.landed){ const v = player.landed; player.landed = 0; if (v > 4 && !player.swimming){ const surf = player.surface(), st = PUFF_STYLE[surf] || PUFF_STYLE.dirt, indoor = !!player.room; audio.land(surf, v, indoor); G.puff(player.pos.x, player.pos.y, player.pos.z, Math.min(1.5, v/8)*st.scale*(indoor ? 0.65 : 1), indoor ? { ...st, opacity:st.opacity*0.6 } : st); } }
+  if (player.jumped){ player.jumped = false; audio.tone(300, 0.16, { type:'triangle', vol:0.07, slide:1.9 }); }
   if (player.riding || player.driving || player.air > 0) lastMoved = player.moved;   // 乗り物の上と空中では足音を出さない
-  else if (player.moved - lastMoved > (player.swimming ? 1.5 : player.running ? 1.7 : 0.85)){ lastMoved = player.moved; audio.step(player.swimming); }
+  else if (player.moved - lastMoved > (player.swimming ? 1.5 : player.running ? 1.7 : 0.85)){ lastMoved = player.moved; audio.step(player.swimming, player.swimming ? 'shallow' : player.surface(), !!player.room); }
   const gh = heightAt(player.pos.x, player.pos.z);
   audio.update({ day:S.day, hour:S.hour, coast:Math.max(0, Math.min(1, 1 - gh/7)), high:Math.min(1, Math.max(0, gh/40)), indoor:G.indoor || G.inSchool, quiet:G.weatherNow.rain > 0.15, bgm:G.bgm || ((S.hour > 17.4 && S.hour < 19.4 && !G.lock) ? 1 : 0),
     furin: !G.indoor && (Math.hypot(player.pos.x - HOME.x, player.pos.z - HOME.z) < 16 || Math.hypot(player.pos.x + 84, player.pos.z - 66) < 14) });

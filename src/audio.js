@@ -2,6 +2,23 @@
 let ctx = null, master, noiseBuf; const L = {};
 function noise(){ const b = ctx.createBufferSource(); b.buffer = noiseBuf; b.loop = true; b.start(); return b; }
 function gainTo(g, v, t=0.8){ g.gain.setTargetAtTime(v, ctx.currentTime, t); }
+// 地面材質ごとの足音・着地音パラメータ（日常動作の邪魔にならないよう差は控えめ）
+const SURF_STEP = {
+  sand:    { dur:0.095, freq:1950, vol:0.044, type:'bandpass' },
+  road:    { dur:0.045, freq:1150, vol:0.052, type:'bandpass' },
+  dirt:    { dur:0.070, freq:1380, vol:0.048, type:'bandpass' },
+  grass:   { dur:0.080, freq:1650, vol:0.040, type:'bandpass' },
+  wood:    { dur:0.055, freq:720,  vol:0.046, type:'bandpass', tap:175 },
+  shallow: { dur:0.125, freq:1250, vol:0.054, type:'bandpass' },
+};
+const SURF_LAND = {
+  sand:    { dur:0.105, freq:680,  vol:0.85, type:'bandpass' },
+  road:    { dur:0.055, freq:350,  vol:1.05, type:'lowpass' },
+  dirt:    { dur:0.075, freq:420,  vol:1.00, type:'lowpass' },
+  grass:   { dur:0.080, freq:480,  vol:0.85, type:'lowpass' },
+  wood:    { dur:0.070, freq:280,  vol:0.90, type:'lowpass', tap:135 },
+  shallow: { dur:0.135, freq:1050, vol:0.95, type:'bandpass' },
+};
 export const audio = {
   start(){ if (ctx) { ctx.resume(); return; }
     ctx = new (window.AudioContext || window.webkitAudioContext)(); master = ctx.createGain(); master.gain.value = 0.8;
@@ -29,7 +46,20 @@ export const audio = {
   burst(dur, freq, vol, { when=0, type='lowpass', echo=false }={}){ if (!ctx) return; const t = ctx.currentTime + when; const n = ctx.createBufferSource(); n.buffer = noiseBuf; const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; const g = ctx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0005, t+dur); n.connect(f); f.connect(g); g.connect(master); if (echo) g.connect(L.echo); n.start(t, Math.random()); n.stop(t+dur+0.05); },
   engine(v, on){ if (!ctx) return; if (!L.eng){ const o = ctx.createOscillator(); o.type = 'sawtooth'; const o2 = ctx.createOscillator(); o2.type = 'square'; const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 420; const g = ctx.createGain(); g.gain.value = 0; o.connect(f); o2.connect(f); f.connect(g); g.connect(master); o.start(); o2.start(); L.eng = { o, o2, g }; }
     const fq = 46 + v*7.5; L.eng.o.frequency.setTargetAtTime(fq, ctx.currentTime, 0.08); L.eng.o2.frequency.setTargetAtTime(fq*0.5, ctx.currentTime, 0.08); L.eng.g.gain.setTargetAtTime(on ? 0.035 + Math.min(0.04, v*0.003) : 0, ctx.currentTime, 0.12); },
-  step(swim){ swim ? this.burst(0.25, 900, 0.07) : this.burst(0.07, 1400, 0.05, { type:'bandpass' }); },
+  step(swim, surf = 'dirt', indoor = false){
+    if (swim === true){ this.burst(0.25, 900, 0.07); return; }
+    const k = typeof swim === 'string' ? swim : surf;
+    const s = SURF_STEP[k] || SURF_STEP.dirt;
+    const p = 0.94 + Math.random()*0.12, vol = s.vol*(indoor ? 0.85 : 1);
+    this.burst(s.dur, s.freq*p, vol, { type:s.type });
+    if (s.tap) this.tone(s.tap*p, 0.035, { type:'triangle', vol:indoor ? 0.014 : 0.018 });
+  },
+  land(surf = 'dirt', v = 6, indoor = false){
+    const s = SURF_LAND[surf] || SURF_LAND.dirt;
+    const base = Math.min(0.22, v*0.022)*s.vol*(indoor ? 0.72 : 1);
+    this.burst(s.dur, s.freq, base, { type:s.type });
+    if (s.tap) this.tone(s.tap, 0.055, { type:'triangle', vol:base*0.25 });
+  },
   blip(){ this.tone(880, 0.04, { type:'square', vol:0.02 }); },
   select(){ this.tone(660, 0.09, { type:'triangle', vol:0.12 }); this.tone(990, 0.12, { type:'triangle', vol:0.1, when:0.07 }); },
   shutter(){ this.burst(0.05, 3000, 0.25, { type:'highpass' }); this.burst(0.08, 2000, 0.2, { type:'highpass', when:0.09 }); },

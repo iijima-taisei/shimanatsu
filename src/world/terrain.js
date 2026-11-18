@@ -70,8 +70,12 @@ function grid(){ if (GRID) return GRID; const g = new Float32Array((SX+1)*(SZ+1)
     for (let iz=0; iz<=SZ; iz++) for (let ix=0; ix<=SX; ix++){ const x = GX0 + ix*TW/SX, z = GZ0 + iz*TD/SZ; let best = 1e9, bh = 0; for (const p of P){ const d = (p[0]-x)*(p[0]-x) + (p[1]-z)*(p[1]-z); if (d < best){ best = d; bh = p[2]; } }
       if (best < 196){ const k = iz*(SX+1)+ix; g[k] += (bh - g[k])*(1 - sstep(5, 14, Math.sqrt(best))); } } }
   return GRID = g; }
+export function platformAt(x, z){
+  for (const p of PLATFORMS){ if (p.r ? Math.hypot(x-p.x, z-p.z) < p.r : (Math.abs(x-p.x) < p.w/2 && Math.abs(z-p.z) < p.d/2)) return p; }
+  return null;
+}
 export function heightAt(x, z){
-  for (const p of PLATFORMS){ if (p.r ? Math.hypot(x-p.x, z-p.z) < p.r : (Math.abs(x-p.x) < p.w/2 && Math.abs(z-p.z) < p.d/2)) return p.top; }
+  const p = platformAt(x, z); if (p) return p.top;
   return gridH(grid(), x, z);
 }
 
@@ -127,6 +131,22 @@ export const ROADS = [
 export const ROAD_W = { main:2.5, lane:1.75, path:1.6 };
 export const ROAD_PTS = [];   // [x, z, nx, nz, 道の番号, 道のりm]
 export function roadDist(x, z, skip=-1){ let m = 1e9; for (const p of ROAD_PTS){ if (p[4] === skip) continue; const d = Math.hypot(x-p[0], z-p[1]); if (d < m) m = d; } return m; }
+// 足元がどの種類の道（'main' | 'lane' | 'path' | null）の上かを線分で判定する。交差時は舗装路を優先する
+export function roadKindAt(x, z){
+  let best = null, bd = 1e9, paved = false;
+  for (let i = 0; i < ROAD_PTS.length - 1; i++){
+    const a = ROAD_PTS[i], b = ROAD_PTS[i + 1]; if (a[4] !== b[4]) continue;
+    const kind = ROADS[a[4]].kind, hw = ROAD_W[kind] + 0.45;
+    if (x < Math.min(a[0], b[0]) - hw || x > Math.max(a[0], b[0]) + hw || z < Math.min(a[1], b[1]) - hw || z > Math.max(a[1], b[1]) + hw) continue;
+    const vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx*vx + vz*vz;
+    const t = l2 > 1e-6 ? Math.max(0, Math.min(1, ((x - a[0])*vx + (z - a[1])*vz)/l2)) : 0;
+    const d = Math.hypot(x - (a[0] + vx*t), z - (a[1] + vz*t));
+    if (d > hw) continue;
+    const isPaved = kind !== 'path';
+    if ((isPaved && !paved) || (isPaved === paved && d < bd)){ paved = isPaved; bd = d; best = kind; }
+  }
+  return best;
+}
 // 道の帯。offs は道の中心からの横位置（複数列にすると地面のでこぼこに沿いやすい）。
 // keep(x,z) が false の場所は張らない（交差点で、線や側溝がほかの道の上に重ならないようにする）。
 function ribbon(curve, n, offs, lift, vScale, keep){ const v=[], u=[], idx=[], K=offs.length, ok=[];

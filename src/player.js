@@ -1,13 +1,16 @@
 import * as THREE from 'three';
-import { heightAt, inBounds } from './world/terrain.js';
+import { heightAt, inBounds, roadKindAt, platformAt, AIRPORT } from './world/terrain.js';
 import { SETTINGS, GEARS } from './keys.js';
 const ROLLBOX = new THREE.Box3();
 const ROLL = 0.85;   // 前回り受け身の長さ（秒）
+const COYOTE = 0.10;   // 段差から足が離れた直後にジャンプを許容する時間（秒）
+const JUMP_BUF = 0.12;   // 着地前のジャンプ先行入力を保持する時間（秒）
 const FP_EYE = new THREE.Vector3();
 let audio_engine = () => {}; export const setEngine = fn => { audio_engine = fn; };   // 原付のエンジン音（main.js から渡す）   // 受け身で転がる時間（秒）
 // 足もとの高さ。ふだんは地形（heightAt）、校舎の中では階ごとの床（school.js が setGround で差しかえる）。y はいまの高さ（どの階の床かを選ぶのに使う）
 let ground = (x, z, y) => heightAt(x, z);
-export const setGround = fn => { ground = fn; };
+let floor = () => null;
+export const setGround = (fn, floorFn) => { ground = fn; if (floorFn) floor = floorFn; };
 const gAt = (y, x, z) => ground(x, z, y);
 import { Character } from './models.js';
 export const keys = {};
@@ -19,6 +22,7 @@ export class Player {
     this.camPos = new THREE.Vector3(); this.look = new THREE.Vector3(); this.moved = 0;
     this.riding = null; this.bikeSpeed = 0; this.bikePhase = 0;
     this.air = 0; this.vy = 0;   // 地面からの高さと上下の速さ（ジャンプ・落下）
+    this.coyote = 0; this.jumpBuf = 0; this.jumped = false;
     addEventListener('keydown', e => {
       if (e.isComposing || e.target.closest?.('button, a, input, select, textarea, [contenteditable="true"]')) return;
       keys[e.code] = true; if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
@@ -33,12 +37,44 @@ export class Player {
     cv.addEventListener('pointermove', e => { if (drag){ this.camYaw -= e.movementX*0.006; if (this.firstPerson) this.fpPitch = THREE.MathUtils.clamp((this.fpPitch || 0) - e.movementY*0.004, -1.2, 1.2); else this.camPitch = THREE.MathUtils.clamp(this.camPitch + e.movementY*0.004, -0.15, 1.1); } });
     cv.addEventListener('wheel', e => { this.camDist = THREE.MathUtils.clamp(this.camDist + e.deltaY*0.01, 3, 12); }, {passive:true});
   }
-  // ジャンプ。泳いでいる間・空中・座っている間はできない
-  jump(){ if (this.locked || this.driving || this.swimming || this.air > 0.01 || this.vy > 0) return false; this.sitting = false; this.vy = this.riding ? 6.6 : 8.1; this.air = 0.001; return true; }
+  // ジャンプ。泳いでいる間・空中・座っている間はできない（徒歩のみコヨーテタイムと先行入力バッファを許容する）
+  jump(){
+    if (this.locked || this.driving || this.swimming) return false;
+    const coyote = !this.riding && this.coyote > 0 && this.vy <= 0;
+    if ((this.air > 0.01 || this.vy > 0) && !coyote){
+      if (!this.riding) this.jumpBuf = JUMP_BUF;
+      return false;
+    }
+    this.sitting = false;
+    this.coyote = 0;
+    this.jumpBuf = 0;
+    this.vy = this.riding ? 6.6 : 8.1;
+    this.air = Math.max(this.air, 0.001);
+    return true;
+  }
+  // 足元の地面の材質を返す（'wood' | 'shallow' | 'road' | 'dirt' | 'sand' | 'grass'）
+  surface(x = this.pos.x, z = this.pos.z, y = this.pos.y){
+    if (this.room) return 'wood';
+    if (floor(x, z, y) !== null) return 'wood';
+    if (this.bedAt && this.bedAt(x, z, y)) return 'wood';
+    const plat = platformAt(x, z);
+    if (plat && Math.abs(y - plat.top) < 0.35) return 'wood';
+    const gh = heightAt(x, z);
+    if (gh < 0.2) return 'shallow';
+    const rk = roadKindAt(x, z);
+    if (rk === 'main' || rk === 'lane') return 'road';
+    if (rk === 'path') return 'dirt';
+    if ((Math.abs(x - AIRPORT.x) < (AIRPORT.w - 8)/2 && Math.abs(z - AIRPORT.rz) < 4.6)
+      || (Math.abs(x - 14) < 26.2 && Math.abs(z - 105.5) < 5.1)) return 'road';
+    if (x >= -1 && x <= 57 && z >= -49 && z <= -15) return 'dirt';
+    if (this.fields) for (const f of this.fields) if (Math.hypot(x - f.x, z - f.z) < 4.5) return 'dirt';
+    if (gh < 2.35) return 'sand';
+    return 'grass';
+  }
   // 上下の動き。ground は足元の高さ。着地したら true
   // 上がるときより、落ちるときの重力を強くする（ふわっとせず、着地に手応えが出る）
   fly(dt, ground){ this.vy -= (this.vy > 0 ? 22 : 34)*dt; const y = this.pos.y + this.vy*dt; if (y <= ground){ const hard = this.vy; this.air = 0; this.vy = 0; this.pos.y = ground; this.landSpeed = -hard; this.landed = -hard; return true; } this.pos.y = y; this.air = y - ground; return false; }
-  teleport(x, z, yaw=0, yHint=999){ this.air = 0; this.vy = 0; this.carry = null; if (this.driving) this.exitCar(true); if (this.riding) this.dismountBike(true); this.pos.set(x, this.room ? this.room.y : gAt(yHint, x, z), z); this.yaw = yaw; this.camYaw = yaw + Math.PI; this.snap = true; }
+  teleport(x, z, yaw=0, yHint=999){ this.air = 0; this.vy = 0; this.coyote = 0; this.jumpBuf = 0; this.jumped = false; this.carry = null; if (this.driving) this.exitCar(true); if (this.riding) this.dismountBike(true); this.pos.set(x, this.room ? this.room.y : gAt(yHint, x, z), z); this.yaw = yaw; this.camYaw = yaw + Math.PI; this.snap = true; }
   // どれだけ深く物に重なっているか（0なら当たっていない）。軽トラが、めりこんだ状態から抜け出せるようにするために使う
   depthAt(x, z, radius=0.35){ let m = 0;
     for (const c of this.col){ if (c.off || (c.y1 !== undefined && (this.pos.y + 0.5 < c.y0 || this.pos.y > c.y1))) continue; let d;   // 校舎の壁は、その階にいるときだけ
@@ -70,6 +106,7 @@ export class Player {
     const yaw=bike.mesh.rotation.y+Math.PI/2, x=bike.mesh.position.x-Math.sin(yaw)*0.27, z=bike.mesh.position.z-Math.cos(yaw)*0.27;
     if (!this.bikeCanFit(x,z,yaw)) return false;
     this.riding=bike; this.bikeSpeed=0; this.bikePhase=bike.phase||0; this.sitting=false;
+    this.coyote=0; this.jumpBuf=0; this.jumped=false;
     this.pos.set(x,gAt(this.pos.y, x,z),z); this.yaw=yaw; this.camYaw=yaw+Math.PI;
     this.bikeCamDist=this.camDist; this.camDist=7.4; this.camPitch=Math.max(0.15,this.camPitch); this.snap=true;
     bike.wheels=['wheelFront','wheelRear'].map(name=>bike.mesh.getObjectByName(name)).filter(Boolean); bike.crank=bike.mesh.getObjectByName('crank');
@@ -159,13 +196,13 @@ export class Player {
       const gp = navigator.getGamepads && navigator.getGamepads()[0];
       if (gp){ if (Math.abs(gp.axes[0])>0.2) mx += gp.axes[0]; if (Math.abs(gp.axes[1])>0.2) mz -= gp.axes[1]; if (Math.abs(gp.axes[2])>0.2) this.camYaw -= gp.axes[2]*dt*2.4; }
     }
-    if (this.driving){ this.updateCar(dt,mx,mz); return; }
+    if (this.driving){ this.coyote = 0; this.jumpBuf = 0; this.updateCar(dt,mx,mz); return; }
     // 軽トラの荷台に腰かけている。とまっている車なら、歩くと荷台の上に立ち上がる
     if (this.carry){ const car = this.carry.car;
       if (!this.locked && !car.busy && Math.hypot(mx, mz) > 0.1){ this.carry = null; this.sitting = false; const p = car.mesh.position; this.pos.set(p.x - Math.sin(car.mesh.rotation.y)*0.6, p.y + 0.68, p.z - Math.cos(car.mesh.rotation.y)*0.6); }
-      else { this.carryUpdate(); this.air = 0; this.vy = 0; this.moving = false; this.swimming = false; this.root.rotation.y = this.yaw; this.ch.shadow.visible = false; this.ch.set(this.pose || 'sit'); this.ch.update(dt);
+      else { this.carryUpdate(); this.air = 0; this.vy = 0; this.coyote = 0; this.jumpBuf = 0; this.moving = false; this.swimming = false; this.root.rotation.y = this.yaw; this.ch.shadow.visible = false; this.ch.set(this.pose || 'sit'); this.ch.update(dt);
         if (!this.camOverride){ if (car.busy){ let d = car.mesh.rotation.y + Math.PI - this.camYaw; d = Math.atan2(Math.sin(d), Math.cos(d)); this.camYaw += d*Math.min(1, dt*1.2); } this.updateCam(dt); } return; } }
-    if (this.riding){ this.updateBike(dt,mx,mz); return; }
+    if (this.riding){ this.coyote = 0; this.jumpBuf = 0; this.updateBike(dt,mx,mz); return; }
     if (this.rollT > 0){ mx = 0; mz = 0; }   // 受け身の最中は動かせない
     const len = Math.hypot(mx, mz); const run = keys.ShiftLeft||keys.ShiftRight;
     if (len > 0.01){
@@ -196,12 +233,28 @@ export class Player {
     const water = gh < -1.0, ty = water ? -0.95 : gh + (this.sitting ? this.seatDrop || 0 : 0);
     // どこから落ちはじめたか（受け身や飛びこみの高さに使う）
     if (this.air <= 0 && this.vy <= 0) this.fallTop = this.pos.y; else this.fallTop = Math.max(this.fallTop ?? this.pos.y, this.pos.y);
-    if (this.air > 0 || this.vy > 0){ if (this.fly(dt, ty)){ const drop = this.fallTop - this.pos.y; this.fallTop = this.pos.y; this.flip = 0;
+    let landedNow = false;
+    if (this.air > 0 || this.vy > 0){
+      if (this.fly(dt, ty)){
+        landedNow = true;
+        const drop = this.fallTop - this.pos.y; this.fallTop = this.pos.y; this.flip = 0;
         if (water){ if (this.landSpeed > 3){ this.splash = true; this.diveH = drop; } }
-        else if (drop > 2.4){ this.rollT = ROLL; this.trick = drop; } } }   // 高いところから落ちたら、前まわりで受け身
+        else if (drop > 2.4){ this.rollT = ROLL; this.trick = drop; }   // 高いところから落ちたら、前まわりで受け身
+      }
+    }
     else if (ty < this.pos.y - 0.6){ this.air = this.pos.y - ty; this.vy = 0; }            // 桟橋や段差の端から落ちる
     else this.pos.y += (ty - this.pos.y)*Math.min(1, dt*12);
     this.swimming = water && this.air <= 0;
+    // コヨーテタイムと先行入力バッファを更新する（徒歩のみ）
+    if (this.swimming || this.locked || this.rollT > 0){
+      this.coyote = 0; this.jumpBuf = 0;
+    } else if (landedNow && this.jumpBuf > 0){
+      if (this.jump()) this.jumped = true;
+    } else {
+      if (this.jumpBuf > 0) this.jumpBuf = Math.max(0, this.jumpBuf - dt);
+      if (this.air <= 0.01 && this.vy <= 0 && !this.sitting) this.coyote = COYOTE;
+      else this.coyote = Math.max(0, this.coyote - dt);
+    }
     // 宙返り：高いところから落ちているあいだは前に回る。地面が近づいたら、ちょうど一回転したところで止める
     this.flip = 0;   // 高いところから落ちても、空中で回らない（利用者の指定、2026-11-17）
     // 受け身：着地したら、前まわりで転がって勢いを逃がす
