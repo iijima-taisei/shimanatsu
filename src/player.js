@@ -102,7 +102,7 @@ export class Player {
   // 上下の動き。ground は足元の高さ。着地したら true
   // 上がるときより、落ちるときの重力を強くする（ふわっとせず、着地に手応えが出る）
   fly(dt, ground){ this.vy -= (this.vy > 0 ? 22 : 34)*dt; const y = this.pos.y + this.vy*dt; if (y <= ground){ const hard = this.vy; this.air = 0; this.vy = 0; this.pos.y = ground; this.landSpeed = -hard; this.landed = -hard; return true; } this.pos.y = y; this.air = y - ground; return false; }
-  teleport(x, z, yaw=0, yHint=999){ this.air = 0; this.vy = 0; this.coyote = 0; this.jumpBuf = 0; this.jumped = false; this.sitting = false; this.seatDrop = 0; this.carry = null; this.bikeBounceT = 0; this.bikeBounceAmp = 0; this.bikeBrakeCd = 0; this.clearHeadLook(); this.headLook.yaw = 0; this.headLook.pitch = 0; if (this.ch?.barefoot) this.ch.setBarefoot(false); if (this.driving) this.exitCar(true); if (this.riding) this.dismountBike(true); if (this.ch?.base) this.ch.base.position.y = 0; this.pos.set(x, this.room ? this.room.y : gAt(yHint, x, z), z); this.yaw = yaw; this.camYaw = yaw + Math.PI; this.snap = true; }
+  teleport(x, z, yaw=0, yHint=999){ this.air = 0; this.vy = 0; this.coyote = 0; this.jumpBuf = 0; this.jumped = false; this.sitting = false; this.seatDrop = 0; this.carry = null; this.bikeBounceT = 0; this.bikeBounceAmp = 0; this.bikeBrakeCd = 0; this.bikeDiveH = 0; this.clearHeadLook(); this.headLook.yaw = 0; this.headLook.pitch = 0; if (this.ch?.barefoot) this.ch.setBarefoot(false); if (this.driving) this.exitCar(true); if (this.riding) this.dismountBike(true); if (this.ch?.base) this.ch.base.position.y = 0; this.pos.set(x, this.room ? this.room.y : gAt(yHint, x, z), z); this.yaw = yaw; this.camYaw = yaw + Math.PI; this.snap = true; }
   // どれだけ深く物に重なっているか（0なら当たっていない）。軽トラが、めりこんだ状態から抜け出せるようにするために使う
   depthAt(x, z, radius=0.35){ let m = 0;
     for (const c of this.col){ if (c.off || (c.y1 !== undefined && (this.pos.y + 0.5 < c.y0 || this.pos.y > c.y1))) continue; let d;   // 校舎の壁は、その階にいるときだけ
@@ -134,7 +134,7 @@ export class Player {
     const yaw=bike.mesh.rotation.y+Math.PI/2, x=bike.mesh.position.x-Math.sin(yaw)*0.27, z=bike.mesh.position.z-Math.cos(yaw)*0.27;
     if (!this.bikeCanFit(x,z,yaw)) return false;
     this.riding=bike; this.bikeSpeed=0; this.bikePhase=bike.phase||0; this.sitting=false;
-    this.bikeBounceT=0; this.bikeBounceAmp=0; this.bikeBrakeCd=0;
+    this.bikeBounceT=0; this.bikeBounceAmp=0; this.bikeBrakeCd=0; this.bikeDiveH=0;
     this.coyote=0; this.jumpBuf=0; this.jumped=false;
     this.pos.set(x,gAt(this.pos.y, x,z),z); this.yaw=yaw; this.camYaw=yaw+Math.PI;
     this.bikeCamDist=this.camDist; this.camDist=7.4; this.camPitch=Math.max(0.15,this.camPitch); this.snap=true;
@@ -156,7 +156,7 @@ export class Player {
     }
     audio_wind(0,false);
     if (this.riding.kind==='moped') audio_engine(0,false);   // 原付のエンジンを止める
-    this.bikeBounceT=0; this.bikeBounceAmp=0; this.bikeBrakeCd=0;
+    this.bikeBounceT=0; this.bikeBounceAmp=0; this.bikeBrakeCd=0; this.bikeDiveH=0;
     if (this.ch?.base) this.ch.base.position.y=0;
     this.syncBike(); this.riding.phase=this.bikePhase; this.riding=null; this.bikeSpeed=0;
     if (point) this.pos.set(point.x,point.y,point.z);
@@ -232,6 +232,7 @@ export class Player {
         this.bikeTop=Math.max(this.bikeTop??this.pos.y,this.pos.y);
         if (this.fly(dt,gh)){
           const drop=this.bikeTop-gh; this.bikeTop=null; if (drop>2) this.bikeTrick=drop;
+          if (gh<-0.75) this.bikeDiveH=Math.max(0,drop);
           if (gh>=-0.75 && this.landSpeed>2.2){
             this.bikeBounceT=0.0001;
             this.bikeBounceAmp=THREE.MathUtils.clamp(this.landSpeed*0.0075,0.025,0.08);
@@ -241,7 +242,8 @@ export class Player {
       else if (gh<this.pos.y-0.5 && this.bikeSpeed>4){ this.vy=Math.max(0,this.bikeClimb||0); this.air=0.01; this.bikeTop=this.pos.y; }   // 坂の頂上や段差から、勢いのまま飛び出す
       else { const y0=this.pos.y; this.pos.y+=(gh-this.pos.y)*Math.min(1,dt*16); this.bikeClimb=(this.pos.y-y0)/Math.max(dt,1e-3); }
       if (gh<0.1) this.bikeSpeed=Math.min(this.bikeSpeed,4.6);          // 水の中は重い
-      if (gh<-0.75 && this.air<=0){ this.bikeDive=true; this.dismountBike(true); this.swimming=true; return; } }   // 深みに入ったら、そのまま泳ぐ
+      // 深みに入ったら落下高を引き継いで泳ぎに切り替える
+      if (gh<-0.75 && this.air<=0){ this.bikeDive=true; this.diveH=this.bikeDiveH||Math.max(0,this.pos.y-gh); this.bikeDiveH=0; this.bikeTop=null; this.dismountBike(true); this.swimming=true; return; } }
     let bounceY=0;
     if (this.bikeBounceT>0){
       this.bikeBounceT+=dt;

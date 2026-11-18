@@ -357,3 +357,8 @@
 - ベンチ着席時に同行中（G.companion）の友達がいれば、座面幅方向に主人公 −0.38m / 同行者 +0.38m へ並べて座らせる（同行者がいないときは従来どおり中心に主人公のみ）。状態は実行時の npc.seatTogether のみで持ち、保存には入れない。
 - 足湯では暗転中に同行者を隣の石縁へ座らせ setBarefoot(true) と sit を即時反映してから fade を開けて G.snap() するので、素足で並んだ姿が日記写真に写る。
 - 維持と解除：NPC.update は主人公の着席中（非乗車・非荷台・屋外・同行中）だけ隣座りを維持する。歩き出し・teleport・部屋出入り・同行解除・荷台乗車・はね飛ばし・朝リセット・花火では clearSeatTogether で即座に立ち上がりと靴表示へ戻す（足湯からは石縁の外側へ退避）。
+
+## 飛び込みの水柱と浅瀬・水泳の波紋（2026-11-18）
+- 飛び込み（P.splash / P.bikeDive）では computeDiveFxParams が落下高 diveH に比例する白い水柱・飛沫（G.puff）と、delay 付き2〜3重の水輪を出す（activities.js の emitDiveSplash）。自転車・原付の飛び込みは player.js が bikeDiveH を diveH へ引き継ぐ。
+- 飛び込み音 audio.splash(diveH, bike)：落下高で低域バーストとサイン波の胴鳴り（thump）の厚み、高域のしぶきと余韻が変わる（computeSplashAudioParams）。
+- 浅瀬・水泳の波紋：stepWaterRipple が主人公と海に入った同行者に、浅瀬0.85m／水泳1.15mごとの距離間引きで小さな水輪を出す。静止時・ワープ時は出さず、桟橋上や運転中・荷台乗車中は除外する。水輪は既存の LineLoop（三角形0、寿命後 dispose）のまま。

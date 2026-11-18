@@ -15,6 +15,70 @@ export function planBite(totalMs, r = Math.random()){
 }
 // 水切りのタイミング精度（0〜1）から跳ねる回数を決める
 export function skipBounces(acc){ return acc > 0.97 ? 12 : 1 + Math.round(Math.pow(acc, 1.6)*10); }
+// 飛び込み時の落下高に応じた白い水柱（G.puff）と時間差水輪（ripple）のパラメータ計算
+export function computeDiveFxParams(diveH = 0, bike = false){
+  const raw = Number.isFinite(diveH) ? diveH : 0;
+  const h = Math.max(0, Math.min(14, raw));
+  const b = bike ? 1 : 0;
+  const count = (h >= 2.5 || bike) ? 3 : 2;
+  const ripples = [
+    { r0:0.24 + h*0.035, r1:1.55 + h*0.25 + b*0.55, dur:0.70 + h*0.045, op:0.90, y:0.06, delay:0 },
+    { r0:0.18 + h*0.025, r1:1.25 + h*0.20 + b*0.45, dur:0.65 + h*0.040, op:0.74, y:0.06, delay:0.13 + h*0.008 },
+  ];
+  if (count === 3){
+    ripples.push({ r0:0.14 + h*0.020, r1:0.98 + h*0.15 + b*0.35, dur:0.60 + h*0.035, op:0.58, y:0.06, delay:0.27 + h*0.014 });
+  }
+  return {
+    column: {
+      k: 0.40 + h*0.045 + b*0.20,
+      color: 0xf4fbff,
+      size: Math.min(9.5, 4.4 + h*0.36 + b*1.0),
+      opacity: Math.min(0.96, 0.86 + h*0.008),
+      up: 2.8 + h*0.85 + b*1.1,
+      n: Math.round(12 + h*1.5 + b*4),
+      dur: 0.52 + h*0.05 + b*0.10,
+      gravity: 10.5,
+    },
+    spray: {
+      k: 1.15 + h*0.14 + b*0.40,
+      color: 0xe8f6fc,
+      size: Math.min(8.0, 3.6 + h*0.26 + b*0.7),
+      opacity: Math.min(0.92, 0.78 + h*0.010),
+      up: 1.45 + h*0.28 + b*0.45,
+      n: Math.round(10 + h*1.0 + b*4),
+      dur: 0.45 + h*0.035 + b*0.08,
+      gravity: 8.5,
+    },
+    ripples,
+  };
+}
+// 浅瀬・水泳時の移動距離に応じた波紋（ripple）の発生判定と間隔管理
+export function stepWaterRipple(tracker, x, z, active, opt = {}){
+  const stepDist = opt.stepDist ?? 0.9;
+  const maxJump = opt.maxJump ?? 8;
+  if (!active){
+    tracker.active = false;
+    return null;
+  }
+  if (!tracker.active){
+    tracker.active = true;
+    tracker.x = x;
+    tracker.z = z;
+    return { x, z, initial:true };
+  }
+  const dist = Math.hypot(x - tracker.x, z - tracker.z);
+  if (dist > maxJump){
+    tracker.x = x;
+    tracker.z = z;
+    return null;
+  }
+  if (dist >= stepDist){
+    tracker.x = x;
+    tracker.z = z;
+    return { x, z, dist, initial:false };
+  }
+  return null;
+}
 const CICADAS = ['アブラゼミ', 'ミンミンゼミ', 'ツクツクボウシ', 'ヒグラシ'];
 const FISH = [['アジ', 30, 18], ['タカベ', 22, 20], ['ムロアジ', 18, 28], ['メジナ', 14, 30], ['カワハギ', 10, 22], ['イサキ', 5, 32], ['シマアジ', 1, 45]];
 const WITH = {   // 友達といっしょのときの一言
@@ -46,13 +110,34 @@ export function setupActivities(G){
   const fx = [];
   const ringPts = []; for (let i = 0; i < 20; i++){ const a = i/20*Math.PI*2; ringPts.push(Math.cos(a), 0, Math.sin(a)); }
   const ringGeo = new THREE.BufferGeometry(); ringGeo.setAttribute('position', new THREE.Float32BufferAttribute(ringPts, 3));
-  const ripple = (x, z, { r0=0.12, r1=0.95, dur=0.6, op=0.75, y=0.06, color=0xf4fbff }={}) => {
+  const ripple = (x, z, { r0=0.12, r1=0.95, dur=0.6, op=0.75, y=0.06, color=0xf4fbff, delay=0 }={}) => {
     if (!G.scene) return;
-    const mat = new THREE.LineBasicMaterial({ color, transparent:true, opacity:op, depthWrite:false });
-    const line = new THREE.LineLoop(ringGeo, mat); line.position.set(x, y, z); line.scale.setScalar(r0); G.scene.add(line); let t = 0;
-    fx.push(dt => { t += dt; const u = Math.min(1, t/dur), ease = 1 - (1 - u)*(1 - u);
+    let mat = null, line = null, t = -delay;
+    const spawn = () => {
+      mat = new THREE.LineBasicMaterial({ color, transparent:true, opacity:op, depthWrite:false });
+      line = new THREE.LineLoop(ringGeo, mat);
+      line.position.set(x, y, z);
+      line.scale.setScalar(r0);
+      G.scene.add(line);
+    };
+    if (delay <= 0) spawn();
+    fx.push(dt => {
+      t += dt;
+      if (t < 0) return;
+      if (!line) spawn();
+      const u = Math.min(1, t/dur), ease = 1 - (1 - u)*(1 - u);
       line.scale.setScalar(r0 + (r1 - r0)*ease); mat.opacity = op*(1 - u);
-      if (t >= dur){ G.scene.remove(line); mat.dispose(); return false; } });
+      if (t >= dur){ G.scene.remove(line); mat.dispose(); return false; }
+    });
+  };
+  // 飛び込み時の水柱と時間差の多重水輪を発生させる
+  const emitDiveSplash = (x, z, diveH, bike = false) => {
+    const p = computeDiveFxParams(diveH, bike);
+    if (G.puff){
+      G.puff(x, 0.05, z, p.column.k, p.column);
+      G.puff(x, 0.05, z, p.spray.k, p.spray);
+    }
+    for (const r of p.ripples) ripple(x, z, r);
   };
   // 立ち位置から最も近い海面（heightAt < -0.1）の方向と距離を探す
   const findSea = (x, z, maxD=24) => {
@@ -269,6 +354,8 @@ export function setupActivities(G){
     if (Math.hypot(b.x - HOME_B[0], b.z - HOME_B[1]) > 110 || heightAt(b.x, b.z) < -0.5) resetBall(); };
 
   let edgeAt = 0, loudAt = -9, cicadaFxT = 0;
+  const playerWater = { active:false, x:0, z:0 };
+  const compWater = { id:null, active:false, x:0, z:0 };
   G.activities = {
     bag(){ const st = S(), a = []; if (st.fish) a.push(`魚 ${st.fish}`); if (st.bugs && st.bugs.length) a.push(`セミ ${st.bugs.length}/${CICADAS.length}`); if (st.crabs && st.crabs.length) a.push(`カニ ${st.crabs.length}/${CRABS.length}`); if (st.skip) a.push(`水切り ${st.skip}回`); if (st.goals) a.push(`ゴール ${st.goals}`); return a.length ? '<br>' + a.join('　') : ''; },
     cicadaProx(){ const st = S(); if (G.indoor || (G.weatherNow && G.weatherNow.rain > 0.15) || st.hour <= 6.5 || st.hour >= 19) return 0;
@@ -283,8 +370,55 @@ export function setupActivities(G){
           W.trees.forEach((t, i) => { if (done.includes(i)) return; const d = Math.hypot(P.pos.x - t.x, P.pos.z - t.z); if (d < bestD){ bestD = d; bestT = t; } });
           if (bestT){ const s = bestT.s || 1, gy = heightAt(bestT.x, bestT.z);
             G.puff(bestT.x + (rnd() - 0.5)*1.8*s, gy + (2.3 + rnd()*1.4)*s, bestT.z + (rnd() - 0.5)*1.8*s, 0.55, { color:0xb7e078, size:2.8, opacity:0.65, up:0.35 }); } } }
-      if (P.splash){ P.splash = false; if ((P.diveH || 0) > 3) G.trick('dive', P.diveH); P.diveH = 0; audio.burst(0.5, 700, 0.5); audio.burst(0.9, 2600, 0.12, { type:'highpass', when:0.05 }); once('diveLog', '海に飛び込んだ。'); if (!S().today.diveToast){ S().today.diveToast = true; toast('ざぶん！'); } }
-      if (P.bikeDive){ P.bikeDive = false; audio.burst(0.6, 600, 0.6); audio.burst(1.0, 2400, 0.14, { type:'highpass', when:0.05 }); toast('自転車ごと海に入ってしまった！（自転車は明日の朝、元の場所に戻る）', 5000); once('bikeDiveLog', '自転車で、そのまま海に突っ込んだ。'); }
+      if (P.splash){
+        P.splash = false;
+        const diveH = Math.max(0, P.diveH || 0); P.diveH = 0;
+        if (diveH > 3) G.trick('dive', diveH);
+        emitDiveSplash(P.pos.x, P.pos.z, diveH, false);
+        audio.splash(diveH, false);
+        playerWater.active = true; playerWater.x = P.pos.x; playerWater.z = P.pos.z;
+        once('diveLog', '海に飛び込んだ。');
+        if (!S().today.diveToast){ S().today.diveToast = true; toast('ざぶん！'); }
+      }
+      if (P.bikeDive){
+        P.bikeDive = false;
+        const diveH = Math.max(0, P.diveH || 0); P.diveH = 0;
+        emitDiveSplash(P.pos.x, P.pos.z, diveH, true);
+        audio.splash(diveH, true);
+        playerWater.active = true; playerWater.x = P.pos.x; playerWater.z = P.pos.z;
+        toast('自転車ごと海に入ってしまった！（自転車は明日の朝、元の場所に戻る）', 5000);
+        once('bikeDiveLog', '自転車で、そのまま海に突っ込んだ。');
+      }
+      /* 主人公の浅瀬移動・水泳による足元／水面の波紋 */
+      {
+        const surf = (!G.indoor && !P.room && !P.driving && !P.carry && !P.hidden && !P.frozen && !P.sitting && (P.swimming || P.air <= 0.05))
+          ? P.surface() : '';
+        const gh = surf === 'shallow' ? heightAt(P.pos.x, P.pos.z) : 1;
+        const inWater = surf === 'shallow' && (P.swimming || gh < 0.10);
+        const step = stepWaterRipple(playerWater, P.pos.x, P.pos.z, inWater, { stepDist: P.swimming ? 1.15 : 0.85 });
+        if (step){
+          const wy = P.swimming ? 0.06 : Math.max(0.06, gh + 0.04);
+          ripple(step.x, step.z, P.swimming
+            ? { r0:0.16, r1:1.05, dur:0.65, op:0.62, y:wy }
+            : { r0:0.10, r1:0.72, dur:0.50, op:0.54, y:wy });
+        }
+      }
+      /* 海に入った同行者の浅瀬・水泳による波紋 */
+      {
+        const cid = G.companion, c = cid && G.npcs ? G.npcs[cid] : null;
+        if (compWater.id !== cid){ compWater.id = cid; compWater.active = false; }
+        const valid = !!(c && c.following && c.root?.visible && !c.ride && !c.knock && !(c.recover > 0) && !c.seatTogether && !G.indoor && !P.room);
+        const cgh = valid ? (G.groundAt ? G.groundAt(c.pos.x, c.pos.z, c.pos.y) : heightAt(c.pos.x, c.pos.z)) : 1;
+        const cInWater = valid && cgh < 0.10 && c.pos.y < 0.25;
+        const cSwim = cgh < -1.0;
+        const cStep = stepWaterRipple(compWater, c ? c.pos.x : 0, c ? c.pos.z : 0, cInWater, { stepDist: cSwim ? 1.15 : 0.85 });
+        if (cStep){
+          const wy = cSwim ? 0.06 : Math.max(0.06, cgh + 0.04);
+          ripple(cStep.x, cStep.z, cSwim
+            ? { r0:0.14, r1:0.95, dur:0.60, op:0.55, y:wy }
+            : { r0:0.09, r1:0.65, dur:0.48, op:0.48, y:wy });
+        }
+      }
       if (P.carStall){ P.carStall = false; audio.burst(0.6, 500, 0.5); toast('深みで水をかぶって、エンジンが止まってしまった（軽トラは明日の朝、元の場所に戻る）', 5000); once('carStallLog', '軽トラで海に入った。しばらくは走れたけれど、深みでエンジンが止まった。'); }
       if (P.edge){ P.edge = false; if (G.time > edgeAt){ edgeAt = G.time + 6; toast('これ以上沖に出ると、流されてしまいそうだ'); } } },
   };

@@ -110,6 +110,28 @@ export function computeMopedEngineParams(v, on = true, opt = {}){
     rpm,
   };
 }
+// 飛び込み時の落下高に応じた低域の厚み・しぶき音パラメータ計算
+export function computeSplashAudioParams(diveH = 0, bike = false){
+  const h = clamp(Number.isFinite(diveH) ? diveH : 0, 0, 14);
+  const t = clamp(h / 10, 0, 1);
+  const b = bike ? 1 : 0;
+  return {
+    lowDur: 0.44 + t * 0.42 + b * 0.08,
+    lowFreq: 720 - t * 280 - b * 60,
+    lowVol: Math.min(0.78, 0.36 + t * 0.34 + b * 0.08),
+    thumpFreq: 115 - t * 38 - b * 10,
+    thumpDur: 0.18 + t * 0.22 + b * 0.04,
+    thumpVol: Math.min(0.26, 0.07 + t * 0.14 + b * 0.03),
+    sprayDur: 0.56 + t * 0.64 + b * 0.10,
+    sprayFreq: 2250 + t * 650 - b * 150,
+    sprayVol: Math.min(0.24, 0.09 + t * 0.12 + b * 0.02),
+    sprayWhen: 0.04,
+    tailDur: 0.32 + t * 0.42 + b * 0.06,
+    tailFreq: 1650 + t * 500,
+    tailVol: h > 1.5 || bike ? Math.min(0.14, 0.035 + t * 0.085 + b * 0.02) : 0,
+    tailWhen: 0.11 + t * 0.08,
+  };
+}
 // 地面材質ごとの足音・着地音パラメータ（日常動作の邪魔にならないよう差は控えめ）
 const SURF_STEP = {
   sand:    { dur:0.095, freq:1950, vol:0.044, type:'bandpass' },
@@ -248,6 +270,17 @@ export const audio = {
     const base = Math.min(0.22, v*0.022)*s.vol*(indoor ? 0.72 : 1);
     this.burst(s.dur, s.freq, base, { type:s.type });
     if (s.tap) this.tone(s.tap, 0.055, { type:'triangle', vol:base*0.25 });
+  },
+  // 飛び込み音（落下高に応じて低域の厚みとしぶき音を変化させる）
+  splash(diveH = 0, bike = false){
+    if (!ctx) return;
+    const p = computeSplashAudioParams(diveH, bike);
+    this.burst(p.lowDur, p.lowFreq, p.lowVol, { type:'lowpass' });
+    this.tone(p.thumpFreq, p.thumpDur, { type:'sine', vol:p.thumpVol, attack:0.004, slide:0.48 });
+    this.burst(p.sprayDur, p.sprayFreq, p.sprayVol, { type:'highpass', when:p.sprayWhen });
+    if (p.tailVol > 0){
+      this.burst(p.tailDur, p.tailFreq, p.tailVol, { type:'bandpass', when:p.tailWhen });
+    }
   },
   blip(){ this.tone(880, 0.04, { type:'square', vol:0.02 }); },
   select(){ this.tone(660, 0.09, { type:'triangle', vol:0.12 }); this.tone(990, 0.12, { type:'triangle', vol:0.1, when:0.07 }); },
